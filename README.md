@@ -19,16 +19,16 @@ of why this particular approach is preferrable, see Stocco (2018).
 
 ### How to run this model
 
-1. Run standalone ACT-R and run Python interpreter
+1. Run standalone ACT-R and Python interpreter
 
 2. Import the `script/simon-device.py` file first. This will load the
    experimental Simon task 
 
-3. Run >> run_experiment()
+3. Run `>> run_experiment()`
 
-4. If you want to change parameters, run >> run_experiment(visible=False, trace=False, param_set={"ans":0.1, "le":0.1})
+4. If you want to change parameters, run `>> run_experiment(visible=False, trace=False, param_set={"ans":0.1, "le":0.1})`
 
-4. (Optional) if you want to compare model data to emperical data, run >> model_error(model="simon", n=1)
+4. (Optional) If you want to compare model data to emperical data, run ` >> model_error(model="simon", n=1)`
 
 ## References
 
@@ -38,10 +38,7 @@ underpinned by differences in the  competitive dynamics in the basal
 ganglia: An experimental verification and a computational
 model. _Cognition_, _164_, 31-45.
 
+
 Stocco, A. (2018). A Biologically Plausible Action Selection System
 for Cognitive Architectures: Implications of Basal Ganglia Anatomy for
 Learning and Decision‐Making Models. _Cognitive Science_.
-
-Finally, load the simon-model.lisp task.
-
-Run the model using ACT-R commands, e.g. (run 1000 :real-time t)
