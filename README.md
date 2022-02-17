@@ -1,7 +1,7 @@
 # ACTR-Simon
- This repo is a revised version of Stocco (2017)'s ACT-R Simon Model [Github Link](https://github.com/UWCCDL/PSS_Simon)
+ This repo is a revised version of Stocco (2017)'s ACT-R Simon Model: [Github](https://github.com/UWCCDL/PSS_Simon)
 
-
+<img src="https://ars.els-cdn.com/content/image/1-s2.0-S0010027717300598-gr6.jpg" width="400"/>
 
 ## The model 
 The model itself borrows from Marsha Lovett's (2005) NJAMOS model of
