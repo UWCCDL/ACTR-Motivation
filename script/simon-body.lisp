@@ -32,10 +32,17 @@
 ;;; 
 ;;; Description :This declarative model simulates gambling task in HCP dataset.
 ;;; 
-;;; Bugs        :
+;;; Bugs        : 2/18 After 5 times run, the model will give nan responses
 ;;;
 ;;;
-;;; To do       : 
+;;; To do       : 2/18: fix bugs because of retrival failure; add goal
+;;; 222.114   PROCEDURAL             PRODUCTION-FIRED RETRIEVE-INTENDED-RESPONSE
+;;; 222.114   PROCEDURAL             CLEAR-BUFFER RETRIEVAL
+;;; 222.114   DECLARATIVE            start-retrieval
+;;; 222.114   PROCEDURAL             CONFLICT-RESOLUTION
+;;; 223.114   DECLARATIVE            RETRIEVAL-FAILURE
+;;; 223.114   PROCEDURAL             CONFLICT-RESOLUTION
+;;; 223.114   ------                 Stopped because no events left to process
 ;;; 
 ;;; ----- History -----
 ;;;
@@ -111,6 +118,8 @@
       value2
       checked)
 
+ (chunk-type phase step)
+
 
 ;;; --------- DM ---------
 (add-dm (simon-rule isa chunk)
@@ -128,6 +137,7 @@
   (done isa chunk)
   (pause isa chunk)
   (screen isa chunk)
+  (on-task isa chunk)
 
 ;;; --------- The Simon Task rules ---------
   (circle-left isa simon-rule
@@ -143,7 +153,10 @@
           hand right
           shape square
           dimension shape)
+
 )
+
+
 
 ;;; ------------------------------------------------------------------
 ;;; INITIALIZATION
@@ -154,10 +167,17 @@
     =visual-location>
     ?visual>
      state     free
+    ?goal>
+     state    free
 ==>
     +visual>               
       cmd      move-attention
       screen-pos =visual-location
+
+    +goal>
+     isa        phase
+     step       on-task
+
 )
 
 
@@ -170,8 +190,15 @@
    ?manual>
      preparation free
      processor free
-     execution free  
+     execution free
+
+   ?goal>
+     state    free
 ==>
+   +goal>
+     isa        phase
+     step       on-task
+
    +imaginal>
      isa wm
      state process
@@ -199,7 +226,11 @@
      state free
      buffer empty
 
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>
    =imaginal>
      value1 =SHAPE
@@ -219,7 +250,11 @@
      state free
      buffer empty
 
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>
    =imaginal>
     value1 =POS
@@ -241,7 +276,11 @@
      state free
      buffer empty
 
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>
    =imaginal>
      value2 =POS
@@ -261,7 +300,11 @@
      state free
      buffer empty
 
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>     
    =imaginal>
      value2 =SHAPE
@@ -289,7 +332,12 @@
    ?retrieval>
      state free
      buffer empty
+
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>   ; Keep visual
    =imaginal> ; Keep WM
    
@@ -322,7 +370,12 @@
    
    ?imaginal>
      state free
+
+   =goal>
+     isa        phase
+     step       on-task
 ==>
+   =goal>
    =visual>
    =retrieval>
    =imaginal>
@@ -345,7 +398,12 @@
    
    ?imaginal>
      state free
- ==>
+
+   =goal>
+     isa        phase
+     step       on-task
+==>
+   =goal>
    =visual>
    -retrieval>
    =imaginal>
@@ -354,6 +412,33 @@
      checked yes
  )
 
+(p retrieve-failure
+    ?imaginal>
+      state    free
+    ?retrieval>
+      buffer   failure
+
+    =visual>
+     kind simon-stimulus
+     shape =SHAPE
+
+    =imaginal>
+     state process
+     - value1 nil
+     - value2 nil
+
+     =goal>
+      isa        phase
+      step       on-task
+==>
+    =goal>
+    =visual>
+    =imaginal>
+
+    +retrieval>
+     kind simon-rule
+     has-motor-response yes
+)
  
 (p respond
    "If we have a response and it has been checked, we respond"
@@ -374,12 +459,41 @@
      preparation free
      processor free
      execution free
+
+   =goal>
+     isa        phase
+     step       on-task
 ==>
-  -imaginal>
-  -retrieval>
-  +manual>
+   =goal>
+   -imaginal>
+   -retrieval>
+   -goal>
+   +manual>
      isa punch
      hand =HAND
      finger index
 )
 
+;;; --- DONE! -------------------------------------------------------------- ;;;
+
+(p done
+   "Detects when the experiment is done"
+   =visual>
+     text           t
+     value          "done"
+     color          black
+
+   ?visual>
+     state          free
+	 
+   ?manual>
+     preparation    free
+     processor      free
+     execution      free
+
+   ?goal>
+     state          free
+==>
+   !stop!
+
+)

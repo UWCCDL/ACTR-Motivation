@@ -14,6 +14,7 @@ import os
 import actr
 import random
 import numpy as np
+import time
 import scipy.optimize as opt
 
 SHAPES = ("CIRCLE", "SQUARE") 
@@ -22,6 +23,7 @@ CONDITIONS = ("CONGRUENT", "INCONGRUENT")
 
 SIMON_MAPPINGS = {"CIRCLE" : "LEFT", "SQUARE" : "RIGHT"}
 RESPONSE_MAPPINGS = {"LEFT" : "f", "RIGHT" : "j"}
+random.seed(100)
 
 
 class SimonStimulus:
@@ -111,7 +113,7 @@ class SimonTrial:
         return self.offset - self.onset
 
 
-def generate_stimuli(shuffle = False):
+def generate_stimuli(shuffle = True):
     "Generates stimuli according to the Stocco(2016) paradigm" 
     congr = [("CIRCLE", "LEFT"), ("SQUARE", "RIGHT")]
     incongr = [("CIRCLE", "RIGHT"), ("SQUARE", "LEFT")]
@@ -216,8 +218,10 @@ class SimonTask:
                 item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
                                                    x = 400, y = 300,
                                                    color = "black")
+                #time.sleep(1)
             
             elif self.phase == "stimulus":
+                actr.clear_buffer("VISUAL")
                 if location == "LEFT":
                     x = 250
                 else:
@@ -225,9 +229,11 @@ class SimonTask:
                 #item = actr.add_text_to_exp_window(self.window, shape,
                 #                                   x=x, y=300)
                 #print("TEST:update_window", shape, location)
+                actr.clear_buffer("VISUAL")
                 item = actr.add_visicon_features(['isa', ['simon-stimulus-location', 'simon-stimulus'], 'kind', 'simon-stimulus',
-                           'screen-x', x, 'screen-y', 300, #'value', ('circle', "'circle 1'"), 
+                           'screen-x', x, 'screen-y', 300, #'value', ('circle', "'circle 1'"),
                            'shape', shape, 'color', 'black', 'location', location])
+                #actr.add_items_to_exp_window(self.window, item)
                 #actr.print_visicon()
 
                 for i, shape in enumerate(SIMON_MAPPINGS):
@@ -235,6 +241,7 @@ class SimonTask:
                                                        RESPONSE_MAPPINGS[SIMON_MAPPINGS[shape]],
                                                        x = 600 + i * 50,
                                                        y = 500)
+                #time.sleep(2)
                 actr.schedule_event_relative(0.001, "stroop-modify-stimulus-feature", params=[])
 
             elif self.phase == "done":
@@ -242,15 +249,16 @@ class SimonTask:
                 location = self.current_trial.location
                 item = actr.add_text_to_exp_window(self.window, "done",
                                                    x=395, y= 300)
-                actr.delete_all_visicon_features()
+                #actr.delete_all_visicon_features()
+                #print("TEST actr.print_visicon():")
+                #actr.print_visicon()
 
                 
     def accept_response(self, model, response):
         """A valid response is a key pressed during the 'stimulus' phase"""
         if self.phase == "stimulus":
             self.current_trial.response = response
-            actr.schedule_event_now("stroop-next")
-
+            actr.schedule_event_now("stroop-next") 
             
     def next(self):
         """Moves on in th task progression"""
@@ -287,11 +295,12 @@ def run_experiment(model="simon",
                    verbose=True,
                    visible=True,
                    trace=True,
-                   param_set=None):
+                   param_set=None, 
+                   reload=True):
     """Runs an experiment"""
-    #actr.reset()
-    load_model(model, param_set)
-
+    
+    # Everytime ACT-R is reloaded, all parameters are set to init
+    if reload: load_model(model, param_set)
     # Set then model parameters
     #for name, val in params:
     #    actr.set_parameter_value(name, val)
@@ -365,12 +374,12 @@ def stats_qc(stats):
     """Quality check for data stats. A good set of aggregagated data should have the 
     following characteristics:
     
-    1. A correct number of trials for each condition (N = 42, 42, 36)
+    1. A correct number of trials for each condition (N = 20, 20)
     2. All the data should be real numbers, and no NaN should be present
     """
     if len(stats) == 3:
         numtrials_check = True
-        for condition, expected in list(zip(CONDITIONS, [42, 42, 36])):
+        for condition, expected in list(zip(CONDITIONS, [20,20])):
             if stats[condition][0] is not expected:
                 numtrials_check = False
         
