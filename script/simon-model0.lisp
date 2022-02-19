@@ -27,22 +27,15 @@
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-model.lisp
-;;; Version     :v2.0
+;;; Filename    :simon-model0.lisp
+;;; Version     :v0.0
 ;;; 
-;;; Description :This declarative model simulates gambling task in HCP dataset.
+;;; Description :This model simulates Simon Task.
 ;;; 
-;;; Bugs        : 2/18 After 5 times run, the model will give nan responses
+;;; Bugs        : 
 ;;;
 ;;;
-;;; To do       : 2/18: fix bugs because of retrival failure; add goal
-;;; 222.114   PROCEDURAL             PRODUCTION-FIRED RETRIEVE-INTENDED-RESPONSE
-;;; 222.114   PROCEDURAL             CLEAR-BUFFER RETRIEVAL
-;;; 222.114   DECLARATIVE            start-retrieval
-;;; 222.114   PROCEDURAL             CONFLICT-RESOLUTION
-;;; 223.114   DECLARATIVE            RETRIEVAL-FAILURE
-;;; 223.114   PROCEDURAL             CONFLICT-RESOLUTION
-;;; 223.114   ------                 Stopped because no events left to process
+;;; To do       :  
 ;;; 
 ;;; ----- History -----
 ;;;
@@ -351,7 +344,7 @@
 ;;; RESPONSE VERIFICATION AND PERFORMANCE MONITORING
 ;;; ------------------------------------------------------------------
 ;;; After selecting a response, the model has one chance to check and
-;;; correct any eventual mistake. The "one ch
+;;; correct any eventual mistake. 
 
 ;;; Check
 ;;; Last time to catch yourself making a mistake

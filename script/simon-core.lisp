@@ -89,11 +89,13 @@
          :ul T
          :egs 0.1
          ;:reward-hook bg-reward-hook
-         :alpha 0.4
+         :alpha 0.1
          :imaginal-activation 3.0
-         :motor-feature-prep-time 0.01    
+         :motor-feature-prep-time 0.02    
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
+         :ult nil 
     )
 )
+

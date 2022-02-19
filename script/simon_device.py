@@ -290,7 +290,7 @@ class SimonTask:
         actr.schedule_event_now("stroop-update-window")
 
 
-def run_experiment(model="simon",
+def run_experiment(model="simon-model0",
                    time=200,
                    verbose=True,
                    visible=True,
@@ -423,18 +423,18 @@ def chery_model_error(model="simon", param_set={"ans":0.1, "mas":0.5}):
 
 
 #################### LOAD MODEL CORE ####################
-def load_model(model="simon", param_set=None, verbose=True):
+def load_model(model="simon-model0", param_set=None, verbose=True):
     """
     Load simon-core.lisp and simon-body.lisp and print current parameter sets
     Set parameters using param_set {"ans":0.1, "lf":0.5}
     """
     curr_dir = os.path.dirname(os.path.realpath('__file__'))
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-core.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, "simon-core.lisp"))
     # load new pramsets
     if param_set: set_parameters(**param_set)
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-body.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, model+".lisp"))
     if verbose:
-        print("######### LOADED MODEL " +actr.current_model()+ " #########")
+        print("######### LOADED MODEL " +model+ " #########")
         print(">>", get_parameters(*get_parameters_name()), "<<")
 
 def check_load(model_name="competitive-simon-py"):
