@@ -224,9 +224,6 @@ class SimonTask:
         item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
                                            x=400, y=300,
                                            color="black")
-        self.current_trial.onset = actr.mp_time()
-        # print('self.current_trial.onset', self.current_trial.onset)
-
         stim = self.current_trial.stimulus
         shape = stim.shape.upper()
         location = stim.location.upper()
@@ -247,6 +244,7 @@ class SimonTask:
 
     def stimulus(self):
         # print("in stimulus", self.phase)
+        
         actr.clear_exp_window()
         shape = self.current_trial.stimulus.shape
         location = self.current_trial.stimulus.location
@@ -279,8 +277,8 @@ class SimonTask:
             self.phase = "stimulus"
             self.update_window()
         elif self.phase == "stimulus":
-            self.current_trial.offset = actr.mp_time()
-            # print('self.current_trial.offset', self.current_trial.offset)
+            self.current_trial.onset = actr.mp_time()
+            #print('self.current_trial.onset', self.current_trial.onset)
             actr.add_command("stroop-accept-response", self.accept_response, "Accepts a response for the Stroop task")
             actr.monitor_command("output-key", "stroop-accept-response")
             self.stimulus()
@@ -289,6 +287,8 @@ class SimonTask:
 
             actr.remove_command_monitor("output-key", "stroop-accept-response")
             actr.remove_command("stroop-accept-response")
+            self.current_trial.offset = actr.mp_time()
+            #print('self.current_trial.offset', self.current_trial.offset)
 
             self.index += 1
             self.log.append(self.current_trial)
