@@ -17,22 +17,25 @@ import numpy as np
 import time
 import scipy.optimize as opt
 
-SHAPES = ("CIRCLE", "SQUARE") 
+SHAPES = ("CIRCLE", "SQUARE")
 LOCATIONS = ("LEFT", "RIGHT")
 CONDITIONS = ("CONGRUENT", "INCONGRUENT")
 
-SIMON_MAPPINGS = {"CIRCLE" : "LEFT", "SQUARE" : "RIGHT"}
-RESPONSE_MAPPINGS = {"LEFT" : "f", "RIGHT" : "j"}
+SIMON_MAPPINGS = {"CIRCLE": "LEFT", "SQUARE": "RIGHT"}
+RESPONSE_MAPPINGS = {"LEFT": "f", "RIGHT": "j"}
+CUE_CONDITIONS = ("CONGRUENT-VALID", "CONGRUENT-INVALID", "INCONGRUENT-VALID", "INCONGRUENT-INVALID")
+
 random.seed(100)
 
 
 class SimonStimulus:
     """An abstract Stroop task stimulus"""
-    def __init__(self, shape, location):
-        if shape in SHAPES:
-            self.shape = shape
-            self.location = location
-            
+
+    def __init__(self, shape, location, cue):
+        assert (shape in SHAPES and location in LOCATIONS and cue in LOCATIONS)
+        self.shape = shape
+        self.location = location
+        self.cue = cue
 
     @property
     def location(self):
@@ -51,6 +54,14 @@ class SimonStimulus:
         self._shape = val
 
     @property
+    def cue(self):
+        return self._cue
+
+    @cue.setter
+    def cue(self, val):
+        self._cue = val
+
+    @property
     def congruent(self):
         if SIMON_MAPPINGS[self.shape] == self.location:
             return True
@@ -63,7 +74,21 @@ class SimonStimulus:
             return True
         else:
             return False
-        
+
+    @property
+    def valid(self):
+        if SIMON_MAPPINGS[self.shape] == self.cue:
+            return True
+        else:
+            return False
+
+    @property
+    def invalid(self):
+        if SIMON_MAPPINGS[self.shape] != self.cue:
+            return True
+        else:
+            return False
+
     @property
     def kind(self):
         """Returns the trial type (congruent, incongruent)"""
@@ -73,16 +98,26 @@ class SimonStimulus:
         elif self.incongruent:
             res = "incongruent"
         return res
-        
+
+    @property
+    def cue_kind(self):
+        """Returns the cue type (valid, invalid)"""
+        res = ""
+        if self.valid:
+            res = "valid"
+        elif self.invalid:
+            res = "invalid"
+        return res
+
     def __str__(self):
-        return "<[%s]'%s' at %s>" % (self.kind, self.shape, self.location)
+        return "<[%s]'%s' at %s; cue: '%s' is [%s]>" % (self.kind, self.shape, self.location, self.cue, self.cue_kind)
 
     def __repr__(self):
         return self.__str__()
 
-
 class SimonTrial:
     """A class for recording a Stroop trial"""
+
     def __init__(self, stimulus):
         """Inits a stroop trial"""
         self.stimulus = stimulus
@@ -92,6 +127,7 @@ class SimonTrial:
         "Sets up properly"
         self.shape = self.stimulus.shape
         self.location = self.stimulus.location
+        self.cue = self.stimulus.cue
         self.onset = 0.0
         self.offset = 0.0
         self.response = None
@@ -99,11 +135,11 @@ class SimonTrial:
     @property
     def correct_response(self):
         return RESPONSE_MAPPINGS[SIMON_MAPPINGS[self.shape]]
-        
+
     @property
     def accuracy(self):
         if self.response is not None and \
-           self.response == self.correct_response:
+                self.response == self.correct_response:
             return 1.0
         else:
             return 0.0
@@ -112,30 +148,35 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
+def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
+    "Generates stimuli according to the Boksem(2006)'s paradigm"
+    congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
+    incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
+    congr_invalid = [("CIRCLE", "LEFT", "RIGHT"), ("SQUARE", "RIGHT", "LEFT")]
+    incongr_invalid = [("CIRCLE", "RIGHT", "RIGHT"), ("SQUARE", "LEFT", "LEFT")]
 
-def generate_stimuli(shuffle = True):
-    "Generates stimuli according to the Stocco(2016) paradigm" 
-    congr = [("CIRCLE", "LEFT"), ("SQUARE", "RIGHT")]
-    incongr = [("CIRCLE", "RIGHT"), ("SQUARE", "LEFT")]
-
-    lst = congr * 10 + incongr * 10
+    valid = congr_valid * int(n_trials * (valid_cue_percentage)) + incongr_valid * int(
+        n_trials * (valid_cue_percentage))
+    invalid = congr_invalid * int(n_trials * (1 - valid_cue_percentage)) + incongr_invalid * int(
+        n_trials * (1 - valid_cue_percentage))
+    lst = valid + invalid
 
     if shuffle:  # Randomized if needed
         random.shuffle(lst)
-    
-    return [SimonStimulus(shape = x[0], location = x[1]) for x in lst]
+
+    return [SimonStimulus(shape=x[0], location=x[1], cue=x[2]) for x in lst]
 
 
 class SimonTask:
     """A simple version of the Stroop task"""
+
     def __init__(self, stimuli=generate_stimuli(), setup=False):
-        """Initializes a Stroop task (if there are stimuli)""" 
+        """Initializes a Stroop task (if there are stimuli)"""
         if len(stimuli) > 0:
             self.stimuli = stimuli
             if setup:
                 self.setup()
 
-        
     def setup(self, win=None):
         """Sets up and prepares for first trial"""
         self.window = win
@@ -144,35 +185,31 @@ class SimonTask:
         self.phase = "fixation"
         self.trial_trace = True
         self.current_trial = SimonTrial(self.stimuli[self.index])
-        self.update_window()
-        actr.schedule_event_relative(1, "stroop-next")
 
-        
     def run_stats(self):
         """Returns some aggregate analysis of model behavior.
-        Stats are calculated only when the model successfully completes the task. 
-        When data are missing or the experiment is not completed, NA values 
+        Stats are calculated only when the model successfully completes the task.
+        When data are missing or the experiment is not completed, NA values
         are returned
         """
-        R = dict(zip(CONDITIONS, [(0, np.nan, np.nan)] * 2))
-        
-        if len(self.log) > 0:  
-            
-            cong = [x for x in self.log if x.stimulus.congruent]
-            incn = [x for x in self.log if x.stimulus.incongruent]
-            #neut = [x for x in self.log if x.stimulus.neutral]
+        R = dict(zip(CUE_CONDITIONS, [(0, np.nan, np.nan)] * len(CUE_CONDITIONS)))
 
-            for cond, data in zip(CONDITIONS,
-                                  [cong, incn]):
+        if len(self.log) > 0:
+
+            cong_valid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.valid)]
+            incn_valid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.valid)]
+            cong_invalid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.invalid)]
+            incn_invalid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.invalid)]
+
+            #for cond, data in zip(CONDITIONS, [cong, incn]):
+            for cond, data in zip(CUE_CONDITIONS, [cong_valid, cong_invalid, incn_valid, incn_invalid]):
                 if len(data) > 0:
                     acc = sum([x.accuracy for x in data]) / len(data)
                     rt = sum([x.response_time for x in data]) / len(data)
-                    
-                    R[cond] = (len(data), acc, rt)
-            
-        return R
 
-                
+                    R[cond] = (len(data), acc, rt)
+
+        return R
 
     def print_stats(self, stats={}):
         """Pretty prints stats about the experiment"""
@@ -181,171 +218,121 @@ class SimonTask:
             print("%s (N=%d): Accuracy = %.2f, Response Times = %.2f ms" % \
                   (cond, n, acc, rt * 1000))
 
-    def modify_stimulus_feature(self):
-        """Cheap hack to remoe strings from visual objects AFTER the visual object
-        has been created through the standard 'exp-window' methods. The algorithm 
-        takes advantage of the fact that visual features are named in a predictable way,
-        with one feature for every item added to the window. During each trial, N = 5
-        items are added to the window (the main stimulus, three response buttons, and
-        one fixation), thus making it possible to calculate the feature ID as such:
-        
-             ID = N * I + 1
-             
-        where N = 5 = number of features per trial, and I = trial index.
-        """
-        id = 5 * self.index + 1
-        feature = "visicon-id%d" % (id,)
+    def fixation(self):
+        # print("in fixation", self.phase)
+        actr.clear_exp_window()
+        item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
+                                           x=400, y=300,
+                                           color="black")
+        self.current_trial.onset = actr.mp_time()
+        # print('self.current_trial.onset', self.current_trial.onset)
+
+        stim = self.current_trial.stimulus
+        shape = stim.shape.upper()
+        location = stim.location.upper()
+        kind = stim.kind.upper()
+        cue = stim.cue.upper()
+        cue_kind = stim.cue_kind.upper()
+
+        print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s CUE %s [%s])" % (kind, shape, location, cue, cue_kind))
+
+    def cue(self):
+        # print("in cue", self.phase)
+        actr.clear_exp_window()
+        cue = self.current_trial.stimulus.cue
+        item = actr.add_visicon_features(
+            ['isa', ['simon-stimulus-location', 'simon-cue'], 'kind', 'simon-cue',
+             'screen-x', 400, 'screen-y', 300,
+             'shape', None, 'color', 'black', 'cue', cue])
+
+    def stimulus(self):
+        # print("in stimulus", self.phase)
+        actr.clear_exp_window()
         shape = self.current_trial.stimulus.shape
         location = self.current_trial.stimulus.location
-        #print("TEST:modify_stimulus_feature", shape, location, feature)
-        #actr.modify_visicon_features([feature, "value", text.upper()])
-        actr.modify_visicon_features([feature, "shape", shape.upper(), "location", location.upper()])
-        #actr.print_visicon()
-            
-            
-    def update_window(self):
-        """Updates the experiment window"""
-        if self.window is not None:
-            # First, clean-up
-            actr.clear_exp_window()
-            
-            shape = self.current_trial.stimulus.shape.upper()
-            location = self.current_trial.stimulus.location.upper()
-            kind = self.current_trial.stimulus.kind.upper()
+        item = actr.add_visicon_features(
+            ['isa', ['simon-stimulus-location', 'simon-stimulus'], 'kind', 'simon-stimulus',
+             'screen-x', 200, 'screen-y', 300,
+             'shape', shape, 'color', 'black', 'location', location])
+        for i, shape in enumerate(SIMON_MAPPINGS):
+            item = actr.add_text_to_exp_window(self.window,
+                                               RESPONSE_MAPPINGS[SIMON_MAPPINGS[shape]],
+                                               x=600 + i * 50,
+                                               y=500)
 
-            # Then, add new elements
-            if self.phase == "fixation":
-                item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
-                                                   x = 400, y = 300,
-                                                   color = "black")
-                #time.sleep(1)
-            
-            elif self.phase == "stimulus":
-                actr.clear_buffer("VISUAL")
-                if location == "LEFT":
-                    x = 250
-                else:
-                    x = 550
-                #item = actr.add_text_to_exp_window(self.window, shape,
-                #                                   x=x, y=300)
-                #print("TEST:update_window", shape, location)
-                actr.clear_buffer("VISUAL")
-                item = actr.add_visicon_features(['isa', ['simon-stimulus-location', 'simon-stimulus'], 'kind', 'simon-stimulus',
-                           'screen-x', x, 'screen-y', 300, #'value', ('circle', "'circle 1'"),
-                           'shape', shape, 'color', 'black', 'location', location])
-                #actr.add_items_to_exp_window(self.window, item)
-                #actr.print_visicon()
+    def done(self):
+        actr.clear_exp_window()
+        item = actr.add_text_to_exp_window(self.window, "done", x=400, y=300)
 
-                for i, shape in enumerate(SIMON_MAPPINGS):
-                    item = actr.add_text_to_exp_window(self.window,
-                                                       RESPONSE_MAPPINGS[SIMON_MAPPINGS[shape]],
-                                                       x = 600 + i * 50,
-                                                       y = 500)
-                #time.sleep(2)
-                actr.schedule_event_relative(0.001, "stroop-modify-stimulus-feature", params=[])
-
-            elif self.phase == "done":
-                shape = self.current_trial.shape
-                location = self.current_trial.location
-                item = actr.add_text_to_exp_window(self.window, "done",
-                                                   x=395, y= 300)
-                #actr.delete_all_visicon_features()
-                #print("TEST actr.print_visicon():")
-                #actr.print_visicon()
-
-                
-    def accept_response(self, model, response):
-        """A valid response is a key pressed during the 'stimulus' phase"""
-        if self.phase == "stimulus":
-            self.current_trial.response = response
-            actr.schedule_event_now("stroop-next") 
-            
-    def next(self):
-        """Moves on in th task progression"""
-        if self.phase == "fixation":
+    def update_window(self, time=10):
+        if self.phase == "done":
+            self.done()
+            actr.run(time)
+        elif self.phase == "fixation":
+            self.fixation()
+            actr.run(time)
+            self.phase = "cue"
+            self.update_window()
+        elif self.phase == "cue":
+            self.cue()
+            actr.run(time)
             self.phase = "stimulus"
-            self.current_trial.onset = actr.mp_time()
-            
-            # If we plan to record the trace, print a marker
-            if self.trial_trace:
-                stim = self.current_trial.stimulus
-                shape = stim.shape.upper()
-                location = stim.location.upper()
-                kind = stim.kind.upper()
-            
-                print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s)" % (kind, shape, location))
-
+            self.update_window()
         elif self.phase == "stimulus":
             self.current_trial.offset = actr.mp_time()
+            # print('self.current_trial.offset', self.current_trial.offset)
+            actr.add_command("stroop-accept-response", self.accept_response, "Accepts a response for the Stroop task")
+            actr.monitor_command("output-key", "stroop-accept-response")
+            self.stimulus()
+
+            actr.run(time)
+
+            actr.remove_command_monitor("output-key", "stroop-accept-response")
+            actr.remove_command("stroop-accept-response")
+
             self.index += 1
             self.log.append(self.current_trial)
             if self.index >= len(self.stimuli):
                 self.phase = "done"
-
             else:
                 self.current_trial = SimonTrial(self.stimuli[self.index])
                 self.phase = "fixation"
-                actr.schedule_event_relative(1, "stroop-next")
+            self.update_window()
 
-        actr.schedule_event_now("stroop-update-window")
+    def accept_response(self, model, response):
+        """A valid response is a key pressed during the 'stimulus' phase"""
+        if self.phase == "stimulus":
+            self.current_trial.response = response
 
-
-def run_experiment(model="simon",
+def run_experiment(model="simon-model1",
                    time=200,
                    verbose=True,
                    visible=True,
                    trace=True,
-                   param_set=None, 
+                   param_set=None,
                    reload=True):
     """Runs an experiment"""
-    
+
     # Everytime ACT-R is reloaded, all parameters are set to init
     if reload: load_model(model, param_set)
-    # Set then model parameters
-    #for name, val in params:
-    #    actr.set_parameter_value(name, val)
-    
-    win = actr.open_exp_window("* SIMON TASK *", width = 800,
-                               height = 600, visible=visible)
+
+    win = actr.open_exp_window("* SIMON TASK *", width=800,
+                               height=600, visible=visible)
 
     actr.install_device(win)
-
     task = SimonTask(setup=False)
-    #print("TEST SIMON TASK:", task.stimuli)
-    #task.window = win
-
-    actr.add_command("stroop-next", task.next,
-                     "Updates the internal task")
-    actr.add_command("stroop-update-window", task.update_window,
-                     "Updates the window")
-    actr.add_command("stroop-accept-response", task.accept_response,
-                     "Accepts a response for the Stroop task")
-    actr.add_command("stroop-modify-stimulus-feature", task.modify_stimulus_feature,
-                    "Post-hoc removal of strings from stimuli features")
-    actr.monitor_command("output-key",
-                         "stroop-accept-response")
-
     task.setup(win)
     if not trace:
         actr.set_parameter_value(":V", False)
         task.trial_trace = False
-    actr.run(time)
+    task.update_window()
     if verbose:
         print("-" * 80)
         task.print_stats(task.run_stats())
 
-    # Cleans up the interface
-    # (Removes all the links between ACT-R and this object).
-
-    actr.remove_command_monitor("output-key",
-                                "stroop-accept-response")
-    actr.remove_command("stroop-next")
-    actr.remove_command("stroop-update-window")
-    actr.remove_command("stroop-accept-response")
-    actr.remove_command("stroop-modify-stimulus-feature")
-    
     # Returns the task as a Python object for further analysis of data
     return task
+
 
 def simulate_behavior(model, param_set=None, n=100, verbose=False):
     """Simulates N runs of the model"""
@@ -362,29 +349,29 @@ def simulate_behavior(model, param_set=None, n=100, verbose=False):
         accuracy_res[j] = np.array([stats[x][1] for x in CONDITIONS])
         rt_res[j] = np.array([stats[x][2] for x in CONDITIONS])
 
-    return accuracy_res, rt_res#res.mean(0) # Column mean
+    return accuracy_res, rt_res  # res.mean(0) # Column mean
 
 
-#VERSTYNEN = [0.720, 0.755, 0.810] # Verstynen's original results
-STOCCO = {"ACCURACY_MEAN":[0.98, 0.88], "ACCURACY_SD":[0.10, 0.03],
-          "RT_MEAN":[0.421, 0.489], "RT_SD":[0.073, 0.088]}
+# VERSTYNEN = [0.720, 0.755, 0.810] # Verstynen's original results
+STOCCO = {"ACCURACY_MEAN": [0.98, 0.88], "ACCURACY_SD": [0.10, 0.03],
+          "RT_MEAN": [0.421, 0.489], "RT_SD": [0.073, 0.088]}
 
 
 def stats_qc(stats):
-    """Quality check for data stats. A good set of aggregagated data should have the 
+    """Quality check for data stats. A good set of aggregagated data should have the
     following characteristics:
-    
+
     1. A correct number of trials for each condition (N = 20, 20)
     2. All the data should be real numbers, and no NaN should be present
     """
     if len(stats) == 3:
         numtrials_check = True
-        for condition, expected in list(zip(CONDITIONS, [20,20])):
+        for condition, expected in list(zip(CONDITIONS, [20, 20])):
             if stats[condition][0] is not expected:
                 numtrials_check = False
-        
+
         if numtrials_check:
-            # If we have the correct number of trials, let's make sure we have 
+            # If we have the correct number of trials, let's make sure we have
             # sensible accuracies and rt values
             allvalues = []
             for condition in CONDITIONS:
@@ -403,9 +390,9 @@ def stats_qc(stats):
 def model_error(model, n=25, param_set=None, observed=STOCCO):
     """Loss function for the model (RMSE)"""
     predicted_accuracy, predicted_rt = simulate_behavior(model, param_set, n)
-    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed['ACCURACY_MEAN'])**2
+    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed['ACCURACY_MEAN']) ** 2
     res_accuracy = np.round(np.sqrt(np.mean(sqerr_accuracy)), 4)
-    sqerr_rt = (predicted_rt.mean(axis=0) - observed['RT_MEAN'])**2
+    sqerr_rt = (predicted_rt.mean(axis=0) - observed['RT_MEAN']) ** 2
     res_rt = np.round(np.sqrt(np.mean(sqerr_rt)), 4)
     if res_accuracy is np.nan:
         res_accuracy = 100000000
@@ -414,31 +401,33 @@ def model_error(model, n=25, param_set=None, observed=STOCCO):
     print("MODEL (RMSE): (ACCURACY: %s \tRT: %s)" % (res_accuracy, res_rt))
     return res_accuracy, res_rt
 
-def chery_model_error(model="simon", param_set={"ans":0.1, "mas":0.5}):
+
+def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
     return model_error(model, n=50, param_set=param_set)
+
 
 # Example:
 
-#res = opt.minimize(stroop.micah_model_error, [1.5], method='nelder-mead', options={'disp':True}) 
+# res = opt.minimize(stroop.micah_model_error, [1.5], method='nelder-mead', options={'disp':True})
 
 
 #################### LOAD MODEL CORE ####################
-def load_model(model="simon", param_set=None, verbose=True):
+def load_model(model="simon-model1", param_set=None, verbose=True):
     """
     Load simon-core.lisp and simon-body.lisp and print current parameter sets
     Set parameters using param_set {"ans":0.1, "lf":0.5}
     """
     curr_dir = os.path.dirname(os.path.realpath('__file__'))
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-core.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, "simon-core.lisp"))
     # load new pramsets
     if param_set: set_parameters(**param_set)
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-body.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, model+".lisp"))
     if verbose:
-        print("######### LOADED MODEL " +actr.current_model()+ " #########")
+        print("######### LOADED MODEL " +model+ " #########")
         print(">>", get_parameters(*get_parameters_name()), "<<")
 
 def check_load(model_name="competitive-simon-py"):
-    has_model = actr.current_model().lower() == model
+    has_model = actr.current_model().lower() == model_name
     has_productions = actr.all_productions() != None
     return has_model & has_productions
 
@@ -474,3 +463,5 @@ def set_parameters(**kwargs):
     for key, value in kwargs.items():
         if key == "r": reward = value
         else: actr.set_parameter_value(':' + key, value)
+
+
