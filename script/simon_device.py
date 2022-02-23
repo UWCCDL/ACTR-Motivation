@@ -149,7 +149,7 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
-def generate_stimuli(shuffle=True, n_trials=2, valid_cue_percentage=0.5):
+def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
     "Generates stimuli according to the Boksem(2006)'s paradigm"
     congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
     incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
@@ -220,13 +220,13 @@ class SimonTask:
                   (cond, n, acc, rt * 1000))
 
     def df_stats_model_outputs(self):
-         accuracy = [x.accuracy for x in self.log]
-         rt = [x.response_time for x in self.log]
-         condition_stimulus = [x.stimulus.kind for x in self.log]
-         condition_cue = [x.stimulus.cue_kind for x in self.log]
-         df_curr = pd.DataFrame.from_dict(self.run_stats()).T.reset_index()
-         df_curr.columns = ["condition", "n", "accuracy", "response_time"]
-         return df_curr
+        accuracy = [x.accuracy for x in self.log]
+        rt = [x.response_time for x in self.log]
+        condition_stimulus = [x.stimulus.kind for x in self.log]
+        condition_cue = [x.stimulus.cue_kind for x in self.log]
+        df_curr = pd.DataFrame([condition_stimulus, condition_cue, accuracy, rt]).T
+        df_curr.columns = ["condition_stimulus", "condition_cue", "accuracy", "response_time"]
+        return df_curr
 
     def df_stats_post_error(self):
         """
@@ -336,12 +336,13 @@ class SimonTask:
         """A valid response is a key pressed during the 'stimulus' phase"""
         if self.phase == "stimulus":
             self.current_trial.response = response
+        #print("TEST accept_response", self.current_trial.response, self.current_trial.stimulus)
 
 
 #################### ########## ####################
 ####                SIMULATION                  ###
 #################### ########## ####################
-def run_experiment(model="simon-model1",
+def run_experiment(model="simon-model3",
                    time=200,
                    verbose=True,
                    visible=True,
@@ -463,7 +464,7 @@ def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
 
 
 #################### LOAD MODEL CORE ####################
-def load_model(model="simon-model1", param_set=None, verbose=True):
+def load_model(model="simon-model3", param_set=None, verbose=True):
     """
     Load simon-core.lisp and simon-body.lisp and print current parameter sets
     Set parameters using param_set {"ans":0.1, "lf":0.5}
