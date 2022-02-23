@@ -27,8 +27,8 @@
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-model2.lisp
-;;; Version     :v2.0
+;;; Filename    :simon-model3.lisp
+;;; Version     :v3.0
 ;;; 
 ;;; Description :This declarative model simulates gambling task in HCP dataset.
 ;;; 
@@ -41,9 +41,12 @@
 ;;;                         
 ;;;
 ;;; To do       : DONE 2/17: fix bugs because of retrival failure; add goal
-;;;                    2/18: 1) Change whether the cue is consistent with stimulus, we
+;;;                    2/18: DONE 1) Change whether the cue is consistent with stimulus, we
 ;;;                          might control for task difficulty.
-;;;                          2) Add a control mechanism - whether keep retrieving 
+;;;                          2) Add a control mechanism - whether keep retrieving:
+;;;                          DONE - qualitative motivation: =1 no check; =2 check once; =3
+;;;                                 check 2 times... 
+;;;                          DONE - quantative control: no check vs. go check unlimited time
 ;;;                          DONE 3) Add a reward delivery mechanism - when check-failed
 ;;;                                  deliver negative rewards, when check passed, positive.
 ;;;                          DONE 4) Use Boksem's paradigm, add cue
@@ -131,7 +134,9 @@
       value3      ;;; Bokesem (2006) CUE
       checked)
 
- (chunk-type phase step)
+ (chunk-type phase
+      step
+      motivation)
 
 
 ;;; --------- DM ---------
@@ -197,6 +202,7 @@
    +goal>
      isa        phase
      step       attend-fixation
+     motivation 2 ;; HAS one chance to check
 
    +imaginal>
      isa wm
@@ -228,10 +234,11 @@
     =goal>
      isa        phase
      step       attend-fixation
+     motivation   =VAL
 ==>
-    +goal>
-      isa      phase
-      step     attend-cue
+    *goal>
+      step       attend-cue
+    ;;;!output! (in process-fixation() the motivation value is =VAL)
 )
 
 ;;; ----------------------------------------------------------------
@@ -256,8 +263,7 @@
      isa        phase
      step       attend-cue
 ==>
-   +goal>
-     isa        phase
+   *goal>
      step       attend-stimulus
    =imaginal>
      value3 =CUE
@@ -270,8 +276,6 @@
 ;;; These production compete for attention to shape and location of
 ;;; the stimulus
 ;;; ----------------------------------------------------------------
-
-
 
 (p process-shape
    "Encodes the shape in WM"
@@ -388,7 +392,7 @@
    =imaginal>
      state process
    - value1 nil
-   - value2 nil  
+   - value2 nil
    
    ?retrieval>
      state free
@@ -397,31 +401,63 @@
    =goal>
      isa        phase
      step       attend-stimulus
+     motivation   =VAL
 ==>
-   +goal>
-     isa        phase
+   !bind! =NEW-VAL (- =VAL 1)
+   *goal>
      step       retrieve-rule
+     motivation   =NEW-VAL
    =visual>   ; Keep visual
    =imaginal> ; Keep WM
-   
    +retrieval>
      kind simon-rule
      has-motor-response yes
+
+   ;;;!output! (in retrieve-intended-response() the motivation old val is =VAL new val is =NEW-VAL)
 )
 
 
 ;;; ------------------------------------------------------------------
 ;;; RESPONSE VERIFICATION AND PERFORMANCE MONITORING
 ;;; ------------------------------------------------------------------
-;;; After selecting a response, the model has UNLIMITED chance to check and
-;;; correct any eventual mistake. In this model, it redo the retrieval 
+;;; After selecting a response, the model has ONE-UNLIMITED chance to check
+;;; and correct any eventual mistake. The motivation chunk determines how
+;;; much effort this model decides to invest: redo retrieval once or redo
 ;;; until correct rule when check-detect-problem fires. 
 ;;; When check-pass fires, a positive reward will be given; while when
 ;;; check-detect-problem fires or retrieval failure, a negative reward 
 ;;; will be given. 
 
+(p dont-check
+   =visual>
+     - shape nil
+
+   =retrieval>
+     kind  simon-rule
+     - shape nil
+
+   =imaginal>
+     state process
+     checked no
+
+   ?imaginal>
+     state free
+
+   =goal>
+     isa        phase
+     step       retrieve-rule
+     <= motivation   0  ;;; count number of attempts, if <=0 do not check
+==>
+   *goal>
+     step       check-rule
+   =visual>
+   =retrieval>
+   =imaginal>
+     checked yes
+)
 ;;; Check
 ;;; Last time to catch yourself making a mistake
+
 (p check-pass
    "Makes sure the response is compatible with the rules"
    =visual>
@@ -441,9 +477,9 @@
    =goal>
      isa        phase
      step       retrieve-rule
+     > motivation   0
 ==>
-   +goal>
-     isa        phase
+   *goal>
      step       check-rule
    =visual>
    =retrieval>
@@ -452,7 +488,7 @@
      checked yes
  )
 
-(p check-detect-problem
+(p check-detect-problem-unlimited
    "If there is a problem, redo until retrieving the rule with correct shape"
    =visual>
      shape =SHAPE
@@ -471,9 +507,10 @@
    =goal>
      isa        phase
      step       retrieve-rule
+     motivation   =VAL
+     > motivation   0
 ==>
-   +goal>
-     isa        phase
+   *goal>
      step       attend-stimulus
    =visual>
    -retrieval>
@@ -481,6 +518,8 @@
      value1 nil     ;;; Bokesem (2006)
      value2 nil
      ;checked yes
+
+   ;;;!output! (in check-detect-problem-unlimited() the motivation is =VAL)
  )
 
 

@@ -14,6 +14,7 @@ import os
 import actr
 import random
 import numpy as np
+import pandas as pd
 import time
 import scipy.optimize as opt
 
@@ -148,7 +149,7 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
-def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
+def generate_stimuli(shuffle=True, n_trials=2, valid_cue_percentage=0.5):
     "Generates stimuli according to the Boksem(2006)'s paradigm"
     congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
     incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
@@ -218,6 +219,38 @@ class SimonTask:
             print("%s (N=%d): Accuracy = %.2f, Response Times = %.2f ms" % \
                   (cond, n, acc, rt * 1000))
 
+    def df_stats_model_outputs(self):
+         accuracy = [x.accuracy for x in self.log]
+         rt = [x.response_time for x in self.log]
+         condition_stimulus = [x.stimulus.kind for x in self.log]
+         condition_cue = [x.stimulus.cue_kind for x in self.log]
+         df_curr = pd.DataFrame.from_dict(self.run_stats()).T.reset_index()
+         df_curr.columns = ["condition", "n", "accuracy", "response_time"]
+         return df_curr
+
+    def df_stats_post_error(self):
+        """
+        This function organizes model output data into post-correct and post-error category
+        """
+        if len(self.log) == len(self.stimuli):
+            corrects = []
+            errors = []
+            for j in range(len(self.log)-1):
+                if self.log[j].accuracy==0:
+                    errors.append(self.log[j+1])
+                else:
+                    corrects.append(self.log[j+1])
+            df_corrects = pd.DataFrame({'response_time':[x.response_time for x in corrects],
+                                        'trial_type':["post_correct"]*len(corrects)})
+            df_errors = pd.DataFrame({'response_time':[x.response_time for x in errors],
+                                      'trial_type':["post_errors"]*len(errors)})
+            df_curr = pd.concat([df_corrects, df_errors], axis=0)
+        return df_curr
+
+
+
+
+
     def fixation(self):
         # print("in fixation", self.phase)
         actr.clear_exp_window()
@@ -230,8 +263,8 @@ class SimonTask:
         kind = stim.kind.upper()
         cue = stim.cue.upper()
         cue_kind = stim.cue_kind.upper()
-
-        print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s CUE %s [%s])" % (kind, shape, location, cue, cue_kind))
+        if self.trial_trace:
+            print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s CUE %s [%s])" % (kind, shape, location, cue, cue_kind))
 
     def cue(self):
         # print("in cue", self.phase)
@@ -262,7 +295,7 @@ class SimonTask:
         actr.clear_exp_window()
         item = actr.add_text_to_exp_window(self.window, "done", x=400, y=300)
 
-    def update_window(self, time=10):
+    def update_window(self, time=200):
         if self.phase == "done":
             self.done()
             actr.run(time)
@@ -304,6 +337,10 @@ class SimonTask:
         if self.phase == "stimulus":
             self.current_trial.response = response
 
+
+#################### ########## ####################
+####                SIMULATION                  ###
+#################### ########## ####################
 def run_experiment(model="simon-model1",
                    time=200,
                    verbose=True,
@@ -325,7 +362,7 @@ def run_experiment(model="simon-model1",
     if not trace:
         actr.set_parameter_value(":V", False)
         task.trial_trace = False
-    task.update_window()
+    task.update_window(time)
     if verbose:
         print("-" * 80)
         task.print_stats(task.run_stats())
@@ -336,8 +373,8 @@ def run_experiment(model="simon-model1",
 
 def simulate_behavior(model, param_set=None, n=100, verbose=False):
     """Simulates N runs of the model"""
-    accuracy_res = np.zeros((n, len(CONDITIONS)))
-    rt_res = np.zeros((n, len(CONDITIONS)))
+    accuracy_res = np.zeros((n, len(CUE_CONDITIONS)))
+    rt_res = np.zeros((n, len(CUE_CONDITIONS)))
     for j in range(n):
         if verbose: print("Run #%03d" % j)
         task = run_experiment(model,
@@ -346,15 +383,18 @@ def simulate_behavior(model, param_set=None, n=100, verbose=False):
                               trace=False,
                               param_set=param_set)
         stats = task.run_stats()
-        accuracy_res[j] = np.array([stats[x][1] for x in CONDITIONS])
-        rt_res[j] = np.array([stats[x][2] for x in CONDITIONS])
+        accuracy_res[j] = np.array([stats[x][1] for x in CUE_CONDITIONS])
+        rt_res[j] = np.array([stats[x][2] for x in CUE_CONDITIONS])
 
     return accuracy_res, rt_res  # res.mean(0) # Column mean
 
 
 # VERSTYNEN = [0.720, 0.755, 0.810] # Verstynen's original results
-STOCCO = {"ACCURACY_MEAN": [0.98, 0.88], "ACCURACY_SD": [0.10, 0.03],
-          "RT_MEAN": [0.421, 0.489], "RT_SD": [0.073, 0.088]}
+# ERROR RATE
+#BOKSEM = {'CONGRUENCY_EFFECT': 0.075, 'VALIDITY_EFFECT': 0.157,
+#          'INCONGRUENT_CORRECT_RT':483, 'CONGRUENT_CORRECT_RT':451,
+#          'INVALID_RT':446, 'VALID_RT':488}
+BOKSEM_FAKE = {'accuracy':[1, 0.95, 0.9,0.7],'rt':[440, 460,470,490]}
 
 
 def stats_qc(stats):
@@ -386,8 +426,21 @@ def stats_qc(stats):
     else:
         return False
 
+def model_error(model, n=1, param_set=None, observed=BOKSEM_FAKE):
+    """Loss function for the model (RMSE)"""
+    predicted_accuracy, predicted_rt = simulate_behavior(model, param_set, n)
+    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed["accuracy"]) ** 2
+    res_accuracy = np.round(np.sqrt(np.mean(sqerr_accuracy)), 4)
+    sqerr_rt = (predicted_rt.mean(axis=0) - observed['rt']) ** 2
+    res_rt = np.round(np.sqrt(np.mean(sqerr_rt)), 4)
+    if res_accuracy is np.nan:
+        res_accuracy = 100000000
+    if res_rt is np.nan:
+        res_rt = 100000000
+    print("MODEL (RMSE): (ACCURACY: %s \tRT: %s)" % (res_accuracy, res_rt))
+    return res_accuracy, res_rt
 
-def model_error(model, n=25, param_set=None, observed=STOCCO):
+def model_error_old(model, n=25, param_set=None, observed=BOKSEM_FAKE):
     """Loss function for the model (RMSE)"""
     predicted_accuracy, predicted_rt = simulate_behavior(model, param_set, n)
     sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed['ACCURACY_MEAN']) ** 2
@@ -401,10 +454,8 @@ def model_error(model, n=25, param_set=None, observed=STOCCO):
     print("MODEL (RMSE): (ACCURACY: %s \tRT: %s)" % (res_accuracy, res_rt))
     return res_accuracy, res_rt
 
-
 def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
     return model_error(model, n=50, param_set=param_set)
-
 
 # Example:
 

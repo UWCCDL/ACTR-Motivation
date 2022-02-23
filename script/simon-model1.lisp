@@ -144,6 +144,8 @@
   (screen isa chunk)
   (attend-fixation isa chunk)
   (attend-cue isa chunk)
+  (attend-stimulus isa chunk)
+  (retrieve-rule isa chunk)
 
 ;;; --------- The Simon Task rules ---------
   (circle-left isa simon-rule
@@ -200,10 +202,7 @@
      state      free
     ?goal>
      state      free
-    =goal>
-     isa        phase
 ==>
-    =goal>
     +visual>
       cmd      move-attention
       screen-pos =visual-location
