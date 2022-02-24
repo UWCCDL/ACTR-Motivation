@@ -28,7 +28,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    :simon-core.lisp
-;;; Version     :v2.0
+;;; Version     :v3.1
 ;;; 
 ;;; Description :This lisp script only deals with parameter setting. Main doc can 
 ;;;              be found in simon-body.lisp
@@ -77,7 +77,7 @@
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (clear-all)
-(define-model competitive-simon-Py
+(define-model simon-motivation-model
     (sgp :seed (100 0)
          :er t
          :act nil
@@ -85,6 +85,7 @@
          :ans 0.5
          :auto-attend T
          :le 0.63
+         :lf 0.1
          :mas 4.0
          :ul T
          :egs 0.1
@@ -95,7 +96,11 @@
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
-         :ult nil
+         :ult t
+         ;:v t
          :trace-detail low
+         :trace-filter production-firing-only
+         ;:pct t
+         ;:blt t
     )
 )
