@@ -3,7 +3,7 @@
 
 <img src="https://ars.els-cdn.com/content/image/1-s2.0-S0010027717300598-gr6.jpg" width="400"/>
 
-## The original model 
+## The Original Model 
 The model itself borrows from Marsha Lovett's (2005) NJAMOS model of
 the Stroop task. It also explcitly models the competition between
 direct and indirect pathways of the basal ganglia as two separate set
@@ -16,9 +16,12 @@ solution is simple, intutitive, and permits to model competitive
 dynamics of the BG without changing ACT-R.  For an in-depth analysis
 of why this particular approach is preferrable, see Stocco (2018).
 
+## Motivation Model
+<img src="https://docs.google.com/drawings/d/e/2PACX-1vS_YKK6E75H-XYmQMRBH1xLt7vjmDSMrB0Ykgw0AnppxTx2KwN5OiReoi77Hr5xkdfKc8kVmMDgrYuQ/pub?w=1359&h=1561" width=400/>
+
 ### Motivation Model1
 
-In this model (simon-motivation-model1), motivation parameter refers to "the times of retrieval (at most)" before providing response. (Motivation parameter has to be an positive integer, default value is 1). For instance,
+In this model (`simon-motivation-model1`), motivation parameter refers to "the times of retrieval (at most)" before providing response. (Motivation parameter has to be an positive integer, default value is 1). For instance,
 
 - motivation parameter = 1, it means that the model would never check the rule.
 
@@ -27,13 +30,13 @@ In this model (simon-motivation-model1), motivation parameter refers to "the tim
 - motivation paramter = 10, it means that the model would go back AT MOST 9 times before giving a response. However, if the retrieved rule passes the check (check-pass) fires, there is no need to redo the retrieve, the model would proceed with the correct answer.
 
 
-
 ### Motivation Model2
 
-In this model(simon-motivation-model2), motivation parameter is like a mental clock, refering to "how many seconds (at most) it would spend before providing response. Now, motivation parameter is in second unit, so it should be a float number. For instance, motivation paramter = 1.5, it means that when model's mental clock exceeds motivation clock (> 0.1s), it would not checking the rule anymore, but if the mental clock is within the motivation clock(< 0.1s), it would continue retrieving and checking the rule.
+In this model(`simon-motivation-model2`), motivation parameter is like a mental clock, refering to "how many seconds (at most) it would spend before providing response. Now, motivation parameter is in second unit, so it should be a float number. For instance, motivation paramter = 1.5, it means that when model's mental clock exceeds motivation clock (> 0.1s), it would not checking the rule anymore, but if the mental clock is within the motivation clock(< 0.1s), it would continue retrieving and checking the rule.
 
 
-### How to run this model
+
+## How to run this model
 
 1. Run standalone ACT-R and Python interpreter
 
