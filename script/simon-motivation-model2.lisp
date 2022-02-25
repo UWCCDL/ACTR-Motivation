@@ -47,7 +47,7 @@
 ;;;                         
 ;;;
 ;;; To do       : DONE 2/17: fix bugs because of retrival failure; add goal
-;;;                    2/18: DONE 1) Change whether the cue is consistent with stimulus, we
+;;;               DONE 2/18: DONE 1) Change whether the cue is consistent with stimulus, we
 ;;;                          might control for task difficulty.
 ;;;                          2) Add a control mechanism - whether keep retrieving:
 ;;;                          DONE - qualitative motivation: =1 no check; =2 check once; =3
@@ -60,6 +60,9 @@
 ;;;                          is retrieved
 ;;;                         DONE 2) Goal buffer delivers reward
 ;;;                         DONE 3) GOAL buffer check-time, rather than how many times one retrieves
+;;;                    2/25 1) Encode feedback - post-error-slow? After negative feedback, adjust 
+;;;                         motivation parameter - longer duration for checking, or more times of 
+;;;                         checking
 ;;; 
 ;;; ----- History -----
 ;;;

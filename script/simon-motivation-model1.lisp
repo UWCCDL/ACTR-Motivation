@@ -142,7 +142,9 @@
 
  (chunk-type phase
       step
-      motivation)
+      motivation
+      time-onset        ;;; mental clock
+      time-duration)    ;;; mental clock
 
 
 ;;; --------- DM ---------
