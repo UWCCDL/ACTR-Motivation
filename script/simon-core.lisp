@@ -96,7 +96,7 @@
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
-         :ult t
+         ;:ult t
          ;:v t
          :trace-detail low
          :trace-filter production-firing-only

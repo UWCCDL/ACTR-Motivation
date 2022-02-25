@@ -28,7 +28,7 @@
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-model.lisp
+;;; Filename    :simon-motivation-model1.lisp
 ;;; Version     :v3.1
 ;;; 
 ;;; Description :This declarative model simulates gambling task in HCP dataset.
@@ -54,7 +54,8 @@
 ;;;                          DONE 4) Use Boksem's paradigm, add cue
 ;;;                    2/23 1) Following Mareka's mind-windering model? When task-relevant goal
 ;;;                          is retrieved
-;;;                         DONE 2) Goal buffer delivers reward 
+;;;                         DONE 2) Goal buffer delivers reward
+;;;                         3) GOAL buffer check-time, rather than how many times one retrieves
 ;;; 
 ;;; ----- History -----
 ;;;
