@@ -458,7 +458,7 @@ class SimonTask:
 ###################################################
 ####                SIMULATION                   ##
 ###################################################
-def run_experiment(model="simon-motivation-model2",
+def run_experiment(model="simon-motivation-model3",
                    time=200,
                    verbose=True,
                    visible=True,
@@ -478,7 +478,7 @@ def run_experiment(model="simon-motivation-model2",
     #print("TEST: in run_experiment()", task.parameters)
     task.setup(win)
     if not trace:
-        actr.set_parameter_value(":V", False)
+        actr.set_parameter_value(":v", False)
         task.trial_trace = False
     
     task.add_actr_commands()
@@ -581,7 +581,7 @@ def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
 
 
 #################### LOAD MODEL CORE ####################
-def load_model(model="simon-motivation-model2", param_set=None, verbose=True):
+def load_model(model="simon-motivation-model3", param_set=None, verbose=True):
     """
     Load simon-core.lisp and simon-body.lisp and print current parameter sets
     Set parameters using param_set {"ans":0.1, "lf":0.5, "motivation":1, "production_reward_pairs":[("CHECK-PASS", 0.1), ("", 0.1)]}
@@ -605,7 +605,7 @@ def load_model(model="simon-motivation-model2", param_set=None, verbose=True):
         print(">> motivation param: ", param_set_motivation, "<<")
         print(">> production_reward_pairs param: ", param_set_reward, "<<")
         
-def check_load(model_name="simon-motivation-model2"):
+def check_load(model_name="simon-motivation-model3"):
     has_model = actr.current_model().lower() == model_name
     has_productions = actr.all_productions() != None
     return has_model & has_productions

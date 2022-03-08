@@ -29,7 +29,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    :simon-motivation-model3.lisp
-;;; Version     :v3.2
+;;; Version     :v3.3
 ;;; 
 ;;; Description :This declarative model simulates simon task based on Boksem (2006)'s 
 ;;;              paradigm. This model takes motivation parameter as mental clock: 
@@ -246,6 +246,7 @@
     +visual>
       cmd      move-attention
       screen-pos =visual-location
+   !eval! (trigger-reward 0) ; CLEAR REWARD TRACE
 )
 
 (p process-fixation
@@ -431,7 +432,6 @@
      motivation   =MOT
      time-onset   =TIME
 ==>
-   ;!bind! =NEW-VAL (- =VAL 1)
    =visual>   ; Keep visual
    =imaginal> ; Keep WM
    +retrieval>
@@ -477,9 +477,6 @@
    ?imaginal>
      state free
    
-   ;!bind!       =CURRTIME (mp-time)
-   ;!bind! =DURATION (- =CURRTIME =TIME)
-   ;!bind! =DIFF (- =MOT =DURATION)
    =goal>
      isa        phase
      step       retrieve-rule
@@ -516,20 +513,12 @@
    ?imaginal>
      state free
    
-   ;!bind!       =CURRTIME (mp-time)
-   ;!bind!       =DURATION (- =CURRTIME =TIME)
-   ;!bind! =DIFF (- =MOT =DURATION)
    =goal>
      isa          phase
      step         retrieve-rule
-     ;time-onset   =TIME
+     time-onset   =TIME
      motivation   =MOT
      > motivation   0 ;;; compete with dont-check, higher utility fires
-     ;> motivation (- =CURRTIME =TIME)
-     
-     ; > motivation (- (mp-time) =TIME)   ;;; mental clock limit < duration
-     ;motivation  =MOT
-     ;>= motivation =DIFF
 ==>
    *goal>
      step       check-rule
@@ -538,8 +527,10 @@
    =imaginal>
      checked yes
    
-   !output! (in check-pass() motivation is =MOT)
-   ;!output! (in check-pass() time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION DIFF(MOT-DURATION) is =DIFF)
+   !bind!       =CURRTIME (mp-time)
+   !bind!       =DURATION (- =CURRTIME =TIME)
+   !eval! (trigger-reward =DURATION)
+   !output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
  )
 
 

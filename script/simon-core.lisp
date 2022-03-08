@@ -81,13 +81,13 @@
     (sgp :seed (100 0)
          :er t
          :act nil
-         :esc T
+         :esc t
          :ans 0.5
-         :auto-attend T
+         :auto-attend t
          :le 0.63
          :lf 0.1
          :mas 4.0
-         :ul T
+         :ul t
          :egs 0.1
          ;:reward-hook bg-reward-hook
          :alpha 0.4
@@ -96,10 +96,10 @@
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
+         :v t
+         ;:trace-detail low
          ;:ult t
-         ;:v t
-         :trace-detail low
-         :trace-filter production-firing-only
+         ;:trace-filter production-firing-only
          ;:pct t
          ;:blt t
     )
