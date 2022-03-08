@@ -15,6 +15,7 @@ import actr
 import random
 import numpy as np
 import pandas as pd
+import json
 import time
 import scipy.optimize as opt
 
@@ -149,7 +150,7 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
-def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
+def generate_stimuli(shuffle=True, n_trials=10, valid_cue_percentage=0.5):
     "Generates stimuli according to the Boksem(2006)'s paradigm"
     congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
     incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
@@ -280,6 +281,58 @@ class SimonTask:
                                       'trial_type':["post_errors"]*len(errors)})
             df_curr = pd.concat([df_corrects, df_errors], axis=0)
         return df_curr
+    
+    def load_history_file(self, record_history): 
+        """
+        This function will extract
+        """
+        file_path = os.path.dirname(os.path.realpath('__file__')) + f'/actr_traces/{record_history}-trace.txt'
+        try:
+            data_list = []
+            with open(file_path, 'r') as f:
+                data_list = json.loads(json.load(f)['data'])
+            return data_list
+        except:
+            print("FILE DOES NOT EXIST!")
+    
+    def extract_production_utilities(self, data_list):
+        """
+        This function extract production utility. 
+        """
+        production_traces = [trace for trace in data_list[1:] if 'conflict-resolution' in trace]
+        df_list = []
+        for trace in production_traces:
+            dfu = pd.DataFrame(trace[-1], columns=['production', ':utility', ':u'])
+            dfu['time'] = trace[0]
+            dfu['selected_p'] = trace[2]
+            dfu['matched_p'] = json.dumps(trace[3])
+            df_list.append(dfu)
+        df = pd.concat(df_list, axis=0)
+        return df
+    
+    def extract_reward(self, data_list):
+        """
+        This function extract info about reward time and amount of reward being delivered
+        """
+        reward_traces = [(trace[0], trace[2]) for trace in data_list[1:] if 'reward' in trace]
+        dfr = pd.DataFrame(reward_traces, columns=['time', 'reward'])
+        return dfr
+    
+    def process_history_data(self, record_history='production-history'):
+        assert record_history in (None, 'production-history', 'retrieval-history')
+        """
+        This function merge utility data to reward data 
+        """
+        data_list = self.load_history_file(record_history)
+        dfu = self.extract_production_utilities(data_list)
+        dfr = self.extract_reward(data_list)
+        df = pd.merge(dfu, dfr, how='left', on='time')
+        df['time']=df['time']/1000
+        
+        # filter only competitive production PROCESS-SHAPE
+        res = df[df['selected_p'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE']) &
+                 df['production'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE'])]
+        return res
 
     def fixation(self):
         #print("in fixation", self.phase)
@@ -464,11 +517,13 @@ def run_experiment(model="simon-motivation-model3",
                    visible=True,
                    trace=True,
                    param_set=None,
-                   reload=True): # goal buffer (value >=1)
+                   reload=True, 
+                   record_history=None): 
     """Runs an experiment"""
 
     # Everytime ACT-R is reloaded, all parameters are set to init
     if reload: load_model(model, param_set)
+    if record_history: actr.record_history(record_history)
 
     win = actr.open_exp_window("* SIMON TASK *", width=800,
                                height=600, visible=visible)
@@ -488,6 +543,9 @@ def run_experiment(model="simon-motivation-model3",
     if verbose:
         print("-" * 80)
         task.print_stats(task.run_stats())
+    if record_history: 
+        actr.save_history_data(record_history, file=os.path.dirname(os.path.realpath('__file__'))+f'/actr_traces/{record_history}-trace.txt')
+        actr.stop_recording_history(record_history)
 
     # Returns the task as a Python object for further analysis of data
     return task
