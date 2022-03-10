@@ -133,7 +133,11 @@ class SimonTrial:
         self.onset = 0.0
         self.offset = 0.0
         self.response = None
+        # record the utility vlaue of each productions during model running
+        self.production_trace = []  # record ':u' values for 4 competitive productions
+        self.chunk_trace = []      # record ':activation' for 2 simon rules
 
+    ################# BEHAVIOR LOG #####################
     @property
     def correct_response(self):
         return RESPONSE_MAPPINGS[SIMON_MAPPINGS[self.shape]]
@@ -150,7 +154,32 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
-def generate_stimuli(shuffle=True, n_trials=10, valid_cue_percentage=0.5):
+    ################# ACT-R TRACE LOG #####################
+    @property
+    def production_trace(self):
+        """
+        This property defines the actr parameter traces
+        Trace follow the dict format: self.production_trace = [(production1, paramter1, value1), ...]
+        """
+        return self._production_trace
+
+    @production_trace.setter
+    def production_trace(self, trace):
+        self._production_trace = trace
+
+    @property
+    def chunk_trace(self):
+        """
+        This property defines the actr parameter traces
+        Trace follow the dict format: self.chunk_trace = [(chunk1, paramter1, value1), ...]
+        """
+        return self._chunk_trace
+
+    @chunk_trace.setter
+    def chunk_trace(self, trace):
+        self._chunk_trace = trace
+
+def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
     "Generates stimuli according to the Boksem(2006)'s paradigm"
     congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
     incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
@@ -190,7 +219,7 @@ class SimonTask:
         """Sets up and prepares for first trial"""
         self.window = win
         self.index = 0
-        self.log = []
+        self.log = []   # log behaviral
         self.phase = "fixation"
         self.trial_trace = True
         self.current_trial = SimonTrial(self.stimuli[self.index])
@@ -202,138 +231,9 @@ class SimonTask:
     @motivation.setter
     def motivation(self, val):
         self._motivation = val
-    '''    
-        
-    def set_motivation_parameters(self, param_set):
-        """
-        This function sets motivation related parameters into a dict form
-        self.parameters = {"motivation": 1, default value = 1
-                           "production_reward_pairs": [("CHECK-PASS", 0.1), ("CHECK-DETECT-PROBLEM-UNLIMITED", -0.1)]}
-        """
-        self.parameters = {}
-        if param_set and ('motivation' in param_set.keys()):
-            self.parameters['motivation'] = param_set['motivation']
-        else:
-            self.parameters['motivation'] = 1 # default value
-        if param_set and ('production_reward_pairs' in param_set.keys()):
-            self.parameters['production_reward_pairs'] = param_set['production_reward_pairs']
-        else:
-            self.parameters['production_reward_pairs'] = None
-        #print("TEST in set_motivation_parameters()", self.parameters)
-            
-            
-    def run_stats(self):
-        """Returns some aggregate analysis of model behavior.
-        Stats are calculated only when the model successfully completes the task.
-        When data are missing or the experiment is not completed, NA values
-        are returned
-        """
-        R = dict(zip(CUE_CONDITIONS, [(0, np.nan, np.nan)] * len(CUE_CONDITIONS)))
+    '''
 
-        if len(self.log) > 0:
-
-            cong_valid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.valid)]
-            incn_valid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.valid)]
-            cong_invalid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.invalid)]
-            incn_invalid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.invalid)]
-
-            #for cond, data in zip(CONDITIONS, [cong, incn]):
-            for cond, data in zip(CUE_CONDITIONS, [cong_valid, cong_invalid, incn_valid, incn_invalid]):
-                if len(data) > 0:
-                    acc = sum([x.accuracy for x in data]) / len(data)
-                    rt = sum([x.response_time for x in data]) / len(data)
-
-                    R[cond] = (len(data), acc, rt)
-
-        return R
-
-    def print_stats(self, stats={}):
-        """Pretty prints stats about the experiment"""
-        for cond in stats.keys():
-            n, acc, rt = stats[cond]
-            print("%s (N=%d): Accuracy = %.2f, Response Times = %.2f ms" % \
-                  (cond, n, acc, rt * 1000))
-
-    def df_stats_model_outputs(self):
-        accuracy = [x.accuracy for x in self.log]
-        rt = [x.response_time for x in self.log]
-        condition_stimulus = [x.stimulus.kind for x in self.log]
-        condition_cue = [x.stimulus.cue_kind for x in self.log]
-        df_curr = pd.DataFrame([condition_stimulus, condition_cue, accuracy, rt]).T
-        df_curr.columns = ["condition_stimulus", "condition_cue", "accuracy", "response_time"]
-        return df_curr
-
-    def df_stats_post_error(self):
-        """
-        This function organizes model output data into post-correct and post-error category
-        """
-        if len(self.log) == len(self.stimuli):
-            corrects = []
-            errors = []
-            for j in range(len(self.log)-1):
-                if self.log[j].accuracy==0:
-                    errors.append(self.log[j+1])
-                else:
-                    corrects.append(self.log[j+1])
-            df_corrects = pd.DataFrame({'response_time':[x.response_time for x in corrects],
-                                        'trial_type':["post_correct"]*len(corrects)})
-            df_errors = pd.DataFrame({'response_time':[x.response_time for x in errors],
-                                      'trial_type':["post_errors"]*len(errors)})
-            df_curr = pd.concat([df_corrects, df_errors], axis=0)
-        return df_curr
-    
-    def load_history_file(self, record_history): 
-        """
-        This function will extract
-        """
-        file_path = os.path.dirname(os.path.realpath('__file__')) + f'/actr_traces/{record_history}-trace.txt'
-        try:
-            data_list = []
-            with open(file_path, 'r') as f:
-                data_list = json.loads(json.load(f)['data'])
-            return data_list
-        except:
-            print("FILE DOES NOT EXIST!")
-    
-    def extract_production_utilities(self, data_list):
-        """
-        This function extract production utility. 
-        """
-        production_traces = [trace for trace in data_list[1:] if 'conflict-resolution' in trace]
-        df_list = []
-        for trace in production_traces:
-            dfu = pd.DataFrame(trace[-1], columns=['production', ':utility', ':u'])
-            dfu['time'] = trace[0]
-            dfu['selected_p'] = trace[2]
-            dfu['matched_p'] = json.dumps(trace[3])
-            df_list.append(dfu)
-        df = pd.concat(df_list, axis=0)
-        return df
-    
-    def extract_reward(self, data_list):
-        """
-        This function extract info about reward time and amount of reward being delivered
-        """
-        reward_traces = [(trace[0], trace[2]) for trace in data_list[1:] if 'reward' in trace]
-        dfr = pd.DataFrame(reward_traces, columns=['time', 'reward'])
-        return dfr
-    
-    def process_history_data(self, record_history='production-history'):
-        assert record_history in (None, 'production-history', 'retrieval-history')
-        """
-        This function merge utility data to reward data 
-        """
-        data_list = self.load_history_file(record_history)
-        dfu = self.extract_production_utilities(data_list)
-        dfr = self.extract_reward(data_list)
-        df = pd.merge(dfu, dfr, how='left', on='time')
-        df['time']=df['time']/1000
-        
-        # filter only competitive production PROCESS-SHAPE
-        res = df[df['selected_p'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE']) &
-                 df['production'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE'])]
-        return res
-
+    #################### STIMULUS DISPLAY ####################
     def fixation(self):
         #print("in fixation", self.phase)
         actr.clear_exp_window()
@@ -405,13 +305,11 @@ class SimonTask:
                 actr.set_buffer_chunk('goal', actr.define_chunks(['isa','phase', 'step','attend-fixation', 
                                                                   'time-onset', actr.mp_time(),  # mental clock
                                                                   'motivation', self.parameters['motivation']])[0]) 
-                
-                     
+
     def verify_reward(self, *params):
         #print('TEST: in verify_reward() there is a reward being given')
         #actr.pp()
         pass
-     
     
     def add_actr_commands(self):
         """
@@ -449,7 +347,6 @@ class SimonTask:
         actr.remove_command("reward-check")
         actr.remove_command("stroop-update-stimulus")
         actr.remove_command("stroop-deliver-rewards")
-    
 
     def update_window(self, time=200):
         if self.phase == "done":
@@ -487,6 +384,15 @@ class SimonTask:
             actr.schedule_event_now("stroop-deliver-rewards") 
             
             self.current_trial.offset = actr.mp_time()
+
+            # NEW: record the production utility
+            self.current_trial.production_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':u'),
+                                                 self.extract_production_parameter('PROCESS-LOCATION', ':u'),
+                                                 self.extract_production_parameter('DONT-PROCESS-SHAPE', ':u'),
+                                                 self.extract_production_parameter('DONT-PROCESS-LOCATION', ':u')]
+            self.current_trial.chunk_trace = [self.extract_chunk_parameter('CIRCLE-LEFT', ':Last-Retrieval-Activation'),
+                                              self.extract_chunk_parameter('SQUARE-RIGHT', ':Last-Retrieval-Activation')]
+
             #print('self.current_trial.offset', self.current_trial.offset)
 
             self.index += 1
@@ -496,8 +402,10 @@ class SimonTask:
             else:
                 self.current_trial = SimonTrial(self.stimuli[self.index])
                 self.phase = "fixation"
+
+            # proceed to next trial
             self.update_window()
-        
+
         # remove actr commands
         #self.remove_actr_commands()
 
@@ -506,6 +414,206 @@ class SimonTask:
         if self.phase == "stimulus":
             self.current_trial.response = response
         #print("TEST accept_response()", self.current_trial.response, self.current_trial.stimulus)
+
+    #################### STATS ANALYSIS ####################
+    def set_motivation_parameters(self, param_set):
+        """
+        This function sets motivation related parameters into a dict form
+        self.parameters = {"motivation": 1, default value = 1
+                           "production_reward_pairs": [("CHECK-PASS", 0.1), ("CHECK-DETECT-PROBLEM-UNLIMITED", -0.1)]}
+        """
+        self.parameters = {}
+        if param_set and ('motivation' in param_set.keys()):
+            self.parameters['motivation'] = param_set['motivation']
+        else:
+            self.parameters['motivation'] = 1  # default value
+        if param_set and ('production_reward_pairs' in param_set.keys()):
+            self.parameters['production_reward_pairs'] = param_set['production_reward_pairs']
+        else:
+            self.parameters['production_reward_pairs'] = None
+        # print("TEST in set_motivation_parameters()", self.parameters)
+
+    def run_stats(self):
+        """Returns some aggregate analysis of model behavior.
+        Stats are calculated only when the model successfully completes the task.
+        When data are missing or the experiment is not completed, NA values
+        are returned
+        """
+        R = dict(zip(CUE_CONDITIONS, [(0, np.nan, np.nan)] * len(CUE_CONDITIONS)))
+
+        if len(self.log) > 0:
+
+            cong_valid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.valid)]
+            incn_valid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.valid)]
+            cong_invalid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.invalid)]
+            incn_invalid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.invalid)]
+
+            # for cond, data in zip(CONDITIONS, [cong, incn]):
+            for cond, data in zip(CUE_CONDITIONS, [cong_valid, cong_invalid, incn_valid, incn_invalid]):
+                if len(data) > 0:
+                    acc = sum([x.accuracy for x in data]) / len(data)
+                    rt = sum([x.response_time for x in data]) / len(data)
+
+                    R[cond] = (len(data), acc, rt)
+
+        return R
+
+    def print_stats(self, stats={}):
+        """Pretty prints stats about the experiment"""
+        for cond in stats.keys():
+            n, acc, rt = stats[cond]
+            print("%s (N=%d): Accuracy = %.2f, Response Times = %.2f ms" % \
+                  (cond, n, acc, rt * 1000))
+
+    def df_stats_model_outputs(self):
+        df = pd.DataFrame()
+        df['trial'] = [i + 1 for i in range(len(self.log))]
+        df['time'] = [t.onset for t in self.log]
+        df['accuracy'] = [t.accuracy for t in self.log]
+        df['response_time'] = [t.response_time for t in self.log]
+        df['condition_stimulus'] = [t.stimulus.kind for t in self.log]
+        df['condition_cue'] = [t.stimulus.cue_kind for t in self.log]
+        df['stimulus_shape'] = [t.stimulus.shape for t in self.log]
+        df['stimulus_location'] = [t.stimulus.location for t in self.log]
+        return df
+
+    def df_stats_post_error(self):
+        """
+        This function organizes model output data into post-correct and post-error category
+        """
+        if len(self.log) == len(self.stimuli):
+            corrects = []
+            errors = []
+            for j in range(len(self.log) - 1):
+                if self.log[j].accuracy == 0:
+                    errors.append(self.log[j + 1])
+                else:
+                    corrects.append(self.log[j + 1])
+            df_corrects = pd.DataFrame({'response_time': [x.response_time for x in corrects],
+                                        'trial_type': ["post_correct"] * len(corrects)})
+            df_errors = pd.DataFrame({'response_time': [x.response_time for x in errors],
+                                      'trial_type': ["post_errors"] * len(errors)})
+            df_curr = pd.concat([df_corrects, df_errors], axis=0)
+        return df_curr
+
+    #################### ACTR HISTORY DATA ####################
+
+    def load_history_file(self, record_history):
+        """
+        This function will extract
+        """
+        file_path = os.path.dirname(os.path.realpath('__file__')) + f'/actr_traces/{record_history}-trace.txt'
+        try:
+            data_list = []
+            with open(file_path, 'r') as f:
+                data_list = json.loads(json.load(f)['data'])
+            return data_list
+        except:
+            print("FILE DOES NOT EXIST!")
+
+    def extract_production_utilities(self, data_list):
+        """
+        This function extract production utility.
+        """
+        production_traces = [trace for trace in data_list[1:] if 'conflict-resolution' in trace]
+        df_list = []
+        for trace in production_traces:
+            dfu = pd.DataFrame(trace[-1], columns=['production', ':utility', ':u'])
+            dfu['time'] = trace[0]
+            dfu['selected_p'] = trace[2]
+            dfu['matched_p'] = json.dumps(trace[3])
+            df_list.append(dfu)
+        df = pd.concat(df_list, axis=0)
+        return df
+
+    def extract_reward(self, data_list):
+        """
+        This function extract info about reward time and amount of reward being delivered
+        """
+        reward_traces = [(trace[0], trace[2]) for trace in data_list[1:] if 'reward' in trace]
+        dfr = pd.DataFrame(reward_traces, columns=['time', 'reward'])
+        return dfr
+    
+    def extract_trial_onset(self, data_list, start_production='PREPARE-WM'):
+        """
+        This production extract the starting time for each trial
+        """
+        start_traces = [trace for trace in data_list[1:] if start_production in trace]
+        start_list = []
+        for i in range(len(self.log)):
+            start_list.append((start_traces[i][0], self.log[i].stimulus.kind, self.log[i].stimulus.cue_kind))
+        df = pd.DataFrame(start_list, columns=['time', 'condition', 'cue'])
+        return df
+
+    def process_history_data(self, record_history='production-history'):
+        assert record_history in (None, 'production-history', 'retrieval-history')
+        """
+        This function merge utility data to reward data 
+        """
+        data_list = self.load_history_file(record_history)
+        dfo = self.extract_trial_onset(data_list)
+        dfu = self.extract_production_utilities(data_list)
+        dfr = self.extract_reward(data_list)
+        
+        # combine dfs
+        df1 = pd.merge(dfu, dfo, how='left', on='time') 
+        df1[['condition', 'cue']]=df1[['condition', 'cue']].fillna(method='ffill')
+        df = pd.merge(df1, dfr, how='left', on='time')
+        df['time'] = df['time'] / 1000
+
+        # filter only competitive production PROCESS-SHAPE
+        res = df[df['selected_p'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE']) &
+                 df['production'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE'])]
+        return res
+
+    #################### ACTR TRACE DATA ####################
+    def print_production_u(self, production_name):
+        assert (production_name in actr.all_productions())
+        """
+        This function will print 
+        """
+        actr.hide_output()
+        u = actr.spp(production_name,":u")[0][0]
+        actr.unhide_output()
+        print('production:', production_name, ':u', u)
+        return u
+
+    def extract_production_parameter(self, production_name, parameter_name):
+        """
+        This function will extract the parameter value of a production during model running
+        """
+        assert (production_name in actr.all_productions() and
+                parameter_name in [':u', ':utility', ':at', ':reward', ':fixed-utility'])
+        actr.hide_output()
+        value = actr.spp(production_name, parameter_name)[0][0]
+        actr.unhide_output()
+        return (production_name, parameter_name, value)
+
+    def extract_chunk_parameter(self, chunk_name, parameter_name):
+        """
+        This function will extract the parameter value of a chunk during model running
+        """
+        try:
+            actr.hide_output()
+            value = actr.sdp(chunk_name, parameter_name)[0][0]
+            actr.unhide_output()
+            return (chunk_name, parameter_name, value)
+        except:
+            print('ERROR: WRONG', chunk_name, parameter_name)
+
+    def process_trace_data(self):
+        """
+        This function process trace data recorded in self.log
+        """
+        dfo = self.df_stats_model_outputs()
+        dfu = pd.DataFrame([[p[2] for p in t.production_trace] for t in self.log],
+                           columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='production', value_name=':u')
+        dfc = pd.DataFrame([[c[2] for c in t.chunk_trace] for t in self.log],
+                           columns=['CIRCLE-LEFT', 'SQUARE-RIGHT'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='rule', value_name=':activation')
+        df = dfo.merge(pd.merge(dfu, dfc, how='left', on='time'), how='right', on='time').sort_values(by='trial')
+        return df
 
 
 ###################################################

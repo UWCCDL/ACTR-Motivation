@@ -80,7 +80,6 @@
 (define-model simon-motivation-model
     (sgp :seed (100 0)
          :er t
-         :act nil
          :esc t
          :ans 0.5
          :auto-attend t
@@ -97,9 +96,10 @@
          :needs-mouse t
          :model-warnings nil
          :v t
-         ;:trace-detail low
+         :trace-detail low
          ;:ult t
-         ;:trace-filter production-firing-only
+         ;:act t
+         :trace-filter production-firing-only
          ;:pct t
          ;:blt t
     )
