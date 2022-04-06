@@ -134,8 +134,10 @@ class SimonTrial:
         self.offset = 0.0
         self.response = None
         # record the utility vlaue of each productions during model running
-        self.production_trace = []  # record ':u' values for 4 competitive productions
+        self.utility_trace = []  # record ':u' values for 4 competitive productions
+        self.cost_trace = []  # record ':at' for 4 competitive productions
         self.chunk_trace = []      # record ':activation' for 2 simon rules
+
 
     ################# BEHAVIOR LOG #####################
     @property
@@ -156,16 +158,28 @@ class SimonTrial:
 
     ################# ACT-R TRACE LOG #####################
     @property
-    def production_trace(self):
+    def utility_trace(self):
         """
         This property defines the actr parameter traces
-        Trace follow the dict format: self.production_trace = [(production1, paramter1, value1), ...]
+        Trace follow the dict format: self.utility_trace = [(production1, paramter1, value1), ...]
         """
-        return self._production_trace
+        return self._utility_trace
 
-    @production_trace.setter
-    def production_trace(self, trace):
-        self._production_trace = trace
+    @utility_trace.setter
+    def utility_trace(self, trace):
+        self._utility_trace = trace
+
+    @property
+    def cost_trace(self):
+        """
+        This property defines the actr production :at parameter traces
+        Trace follow the dict format: self.cost_trace = [(production1, paramter1, value1), ...]
+        """
+        return self._cost_trace
+
+    @cost_trace.setter
+    def cost_trace(self, trace):
+        self._cost_trace = trace
 
     @property
     def chunk_trace(self):
@@ -223,15 +237,6 @@ class SimonTask:
         self.phase = "fixation"
         self.trial_trace = True
         self.current_trial = SimonTrial(self.stimuli[self.index])
-    '''
-    @property
-    def motivation(self):
-        return self._motivation
-
-    @motivation.setter
-    def motivation(self, val):
-        self._motivation = val
-    '''
 
     #################### STIMULUS DISPLAY ####################
     def fixation(self):
@@ -276,41 +281,7 @@ class SimonTask:
     def done(self):
         actr.clear_exp_window()
         item = actr.add_text_to_exp_window(self.window, "done", x=400, y=300)
-        
-    def deliver_rewards(self, verbose=False):
-        """
-        This function delivers reward to productions. The production name and rewards are set
-        as parameter at the begining 
-        self.parameters['production_reward_pairs'] = [('CHECK-PASS', 0.1), ('RESPOND', -0.1)]
-        """
-        #print("TEST in deliver_rewards()", self.phase)
-        #if (self.phase == "fixation") and self.parameters['production_reward_pairs']:
-        if self.parameters['production_reward_pairs']:
-            for production_name, reward_value in self.parameters['production_reward_pairs']:
-                if production_name in actr.all_productions():
-                    actr.spp(production_name, ':reward', reward_value)
-                    if verbose: print("DELIVER REWARD:", reward_value, ">>>", production_name)
-                else:
-                    if verbose: print("WRONG PRODUCTION NAME", production_name, reward_value)
-        else:
-            if verbose: print("No reward delivered: ", self.parameters['production_reward_pairs'])
-                    
-    def set_motivation(self):
-        """
-        This function set motivation value to goal buffer
-        """
-        # SET GOAL (motivation value)
-        #print("TEST, in set_motivation()")
-        if self.phase == "fixation" and self.parameters['motivation']:
-                actr.set_buffer_chunk('goal', actr.define_chunks(['isa','phase', 'step','attend-fixation', 
-                                                                  'time-onset', actr.mp_time(),  # mental clock
-                                                                  'motivation', self.parameters['motivation']])[0]) 
 
-    def verify_reward(self, *params):
-        #print('TEST: in verify_reward() there is a reward being given')
-        #actr.pp()
-        pass
-    
     def add_actr_commands(self):
         """
         This function adds all necessary act-r commands before model running
@@ -323,6 +294,7 @@ class SimonTask:
             self.verify_reward() - check whether the model receives reward
         """
         actr.add_command("stroop-set-motivation", self.set_motivation, "Set motivation parameter for the model")
+        actr.add_command("stroop-update-cost", self.update_cost, "Update cost :at for the model")
         actr.add_command("stroop-update-fixation", self.fixation, "Update window: fixation")
         actr.add_command("stroop-update-cue", self.cue, "Update window: cue")
         
@@ -338,6 +310,7 @@ class SimonTask:
         This function removes all added act-r commands after model is done
         """
         actr.remove_command("stroop-set-motivation")
+        actr.remove_command("stroop-update-cost")
         actr.remove_command("stroop-update-fixation")
         actr.remove_command("stroop-update-cue")
         
@@ -386,12 +359,21 @@ class SimonTask:
             self.current_trial.offset = actr.mp_time()
 
             # NEW: record the production utility
-            self.current_trial.production_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':u'),
+            self.current_trial.utility_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':u'),
                                                  self.extract_production_parameter('PROCESS-LOCATION', ':u'),
                                                  self.extract_production_parameter('DONT-PROCESS-SHAPE', ':u'),
                                                  self.extract_production_parameter('DONT-PROCESS-LOCATION', ':u')]
+            # record activation
             self.current_trial.chunk_trace = [self.extract_chunk_parameter('CIRCLE-LEFT', ':Last-Retrieval-Activation'),
                                               self.extract_chunk_parameter('SQUARE-RIGHT', ':Last-Retrieval-Activation')]
+
+            # record cost
+            self.current_trial.cost_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':at'),
+                                           self.extract_production_parameter('PROCESS-LOCATION', ':at'),
+                                           self.extract_production_parameter('DONT-PROCESS-SHAPE', ':at'),
+                                           self.extract_production_parameter('DONT-PROCESS-LOCATION', ':at')]
+
+            # record cost
 
             #print('self.current_trial.offset', self.current_trial.offset)
 
@@ -402,6 +384,9 @@ class SimonTask:
             else:
                 self.current_trial = SimonTrial(self.stimuli[self.index])
                 self.phase = "fixation"
+
+            # update cost
+            self.update_cost()
 
             # proceed to next trial
             self.update_window()
@@ -415,7 +400,60 @@ class SimonTask:
             self.current_trial.response = response
         #print("TEST accept_response()", self.current_trial.response, self.current_trial.stimulus)
 
-    #################### STATS ANALYSIS ####################
+    #################### ACT-R COMMAND ####################
+    def deliver_rewards(self, verbose=False):
+        """
+        This function delivers reward to productions. The production name and rewards are set
+        as parameter at the begining
+        self.parameters['production_reward_pairs'] = [('CHECK-PASS', 0.1), ('RESPOND', -0.1)]
+        """
+        # print("TEST in deliver_rewards()", self.phase)
+        # if (self.phase == "fixation") and self.parameters['production_reward_pairs']:
+        if self.parameters['production_reward_pairs']:
+            for production_name, reward_value in self.parameters['production_reward_pairs']:
+                if production_name in actr.all_productions():
+                    actr.spp(production_name, ':reward', reward_value)
+                    if verbose: print("DELIVER REWARD:", reward_value, ">>>", production_name)
+                else:
+                    if verbose: print("WRONG PRODUCTION NAME", production_name, reward_value)
+        else:
+            if verbose: print("No reward delivered: ", self.parameters['production_reward_pairs'])
+
+    def set_motivation(self):
+        """
+        This function set motivation value to goal buffer
+        """
+        # SET GOAL (motivation value)
+        # print("TEST, in set_motivation()")
+        if self.phase == "fixation" and self.parameters['motivation']:
+            actr.set_buffer_chunk('goal', actr.define_chunks(['isa', 'phase', 'step', 'attend-fixation',
+                                                              'time-onset', actr.mp_time(),  # mental clock
+                                                              'motivation', self.parameters['motivation']])[0])
+
+    def verify_reward(self, *params):
+        #print('TEST: in verify_reward() there is a reward being given')
+        # actr.pp()
+        pass
+
+    def cost_function(self, c=0.002):
+        """
+        Define the function of cost increases as time
+        """
+        return np.round(0.05 + np.square(actr.mp_time() * c), 2)
+        # return np.round(0.05 + np.square(actr.mp_time()*c), 2)
+
+    def update_cost(self):
+        """
+        Update the cost for production by updating :at
+        """
+        if self.phase == "fixation":
+            new_at = self.cost_function()
+            actr.hide_output()
+            actr.spp(":at", new_at)
+            actr.unhide_output()
+            # print('TEST: cost: new :at', new_at)
+
+    #################### ACTR STATS ANALYSIS ####################
     def set_motivation_parameters(self, param_set):
         """
         This function sets motivation related parameters into a dict form
@@ -496,87 +534,7 @@ class SimonTask:
             df_curr = pd.concat([df_corrects, df_errors], axis=0)
         return df_curr
 
-    #################### ACTR HISTORY DATA ####################
-
-    def load_history_file(self, record_history):
-        """
-        This function will extract
-        """
-        file_path = os.path.dirname(os.path.realpath('__file__')) + f'/actr_traces/{record_history}-trace.txt'
-        try:
-            data_list = []
-            with open(file_path, 'r') as f:
-                data_list = json.loads(json.load(f)['data'])
-            return data_list
-        except:
-            print("FILE DOES NOT EXIST!")
-
-    def extract_production_utilities(self, data_list):
-        """
-        This function extract production utility.
-        """
-        production_traces = [trace for trace in data_list[1:] if 'conflict-resolution' in trace]
-        df_list = []
-        for trace in production_traces:
-            dfu = pd.DataFrame(trace[-1], columns=['production', ':utility', ':u'])
-            dfu['time'] = trace[0]
-            dfu['selected_p'] = trace[2]
-            dfu['matched_p'] = json.dumps(trace[3])
-            df_list.append(dfu)
-        df = pd.concat(df_list, axis=0)
-        return df
-
-    def extract_reward(self, data_list):
-        """
-        This function extract info about reward time and amount of reward being delivered
-        """
-        reward_traces = [(trace[0], trace[2]) for trace in data_list[1:] if 'reward' in trace]
-        dfr = pd.DataFrame(reward_traces, columns=['time', 'reward'])
-        return dfr
-    
-    def extract_trial_onset(self, data_list, start_production='PREPARE-WM'):
-        """
-        This production extract the starting time for each trial
-        """
-        start_traces = [trace for trace in data_list[1:] if start_production in trace]
-        start_list = []
-        for i in range(len(self.log)):
-            start_list.append((start_traces[i][0], self.log[i].stimulus.kind, self.log[i].stimulus.cue_kind))
-        df = pd.DataFrame(start_list, columns=['time', 'condition', 'cue'])
-        return df
-
-    def process_history_data(self, record_history='production-history'):
-        assert record_history in (None, 'production-history', 'retrieval-history')
-        """
-        This function merge utility data to reward data 
-        """
-        data_list = self.load_history_file(record_history)
-        dfo = self.extract_trial_onset(data_list)
-        dfu = self.extract_production_utilities(data_list)
-        dfr = self.extract_reward(data_list)
-        
-        # combine dfs
-        df1 = pd.merge(dfu, dfo, how='left', on='time') 
-        df1[['condition', 'cue']]=df1[['condition', 'cue']].fillna(method='ffill')
-        df = pd.merge(df1, dfr, how='left', on='time')
-        df['time'] = df['time'] / 1000
-
-        # filter only competitive production PROCESS-SHAPE
-        res = df[df['selected_p'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE']) &
-                 df['production'].isin(['PROCESS-LOCATION', 'PROCESS-SHAPE', 'DONT-PROCESS-LOCATION', 'DONT-PROCESS-SHAPE'])]
-        return res
-
     #################### ACTR TRACE DATA ####################
-    def print_production_u(self, production_name):
-        assert (production_name in actr.all_productions())
-        """
-        This function will print 
-        """
-        actr.hide_output()
-        u = actr.spp(production_name,":u")[0][0]
-        actr.unhide_output()
-        print('production:', production_name, ':u', u)
-        return u
 
     def extract_production_parameter(self, production_name, parameter_name):
         """
@@ -606,13 +564,17 @@ class SimonTask:
         This function process trace data recorded in self.log
         """
         dfo = self.df_stats_model_outputs()
-        dfu = pd.DataFrame([[p[2] for p in t.production_trace] for t in self.log],
+        df_u = pd.DataFrame([[p[2] for p in t.utility_trace] for t in self.log],
                            columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
                            index=dfo.time).reset_index().melt(id_vars='time', var_name='production', value_name=':u')
+        df_at = pd.DataFrame([[p[2] for p in t.cost_trace] for t in self.log],
+                           columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='production', value_name=':at')
         dfc = pd.DataFrame([[c[2] for c in t.chunk_trace] for t in self.log],
                            columns=['CIRCLE-LEFT', 'SQUARE-RIGHT'],
                            index=dfo.time).reset_index().melt(id_vars='time', var_name='rule', value_name=':activation')
-        df = dfo.merge(pd.merge(dfu, dfc, how='left', on='time'), how='right', on='time').sort_values(by='trial')
+        dfp = pd.merge(df_u, df_at, how='inner', on=['time', 'production'])
+        df = dfo.merge(pd.merge(dfp, dfc, how='left', on='time'), how='right', on='time').sort_values(by='trial')
         return df
 
 
@@ -749,18 +711,28 @@ def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
 #################### LOAD MODEL CORE ####################
 def load_model(model="simon-motivation-model3", param_set=None, verbose=True):
     """
-    Load simon-core.lisp and simon-body.lisp and print current parameter sets
+    Load simon-core.lisp + simon-base.lisp + simon-motivation-modelx.lisp,and print current parameter sets
     Set parameters using param_set {"ans":0.1, "lf":0.5, "motivation":1, "production_reward_pairs":[("CHECK-PASS", 0.1), ("", 0.1)]}
     """
     curr_dir = os.path.dirname(os.path.realpath('__file__'))
+    
+    # load model-core.lisp + model-base.lisp 
     actr.load_act_r_model(os.path.join(curr_dir, "simon-core.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, "simon-base.lisp"))
+    
+    # diable duplicate productions
+    actr.pdisable('CHECK-PASS', 'RETRIEVE-INTENDED-RESPONSE')
+    
     # load new pramsets
     if param_set: 
         actr_param_set = param_set.copy()
         if "motivation" in param_set.keys(): actr_param_set.pop("motivation")
         if "production_reward_pairs" in param_set.keys(): actr_param_set.pop("production_reward_pairs")
         set_parameters(**actr_param_set)
+    
+     # load model-x.lisp 
     actr.load_act_r_model(os.path.join(curr_dir, model+".lisp"))
+    
     if verbose:
         print("######### LOADED MODEL " +model+ " #########")
         print(">> ACT-R: ", get_parameters(*get_parameters_name()), "<<") 
@@ -776,7 +748,7 @@ def check_load(model_name="simon-motivation-model3"):
     has_productions = actr.all_productions() != None
     return has_model & has_productions
 
-#################### PARAMETER SET ####################
+#################### ACTR PARAMETER SET ####################
 
 def get_parameters_name():
     param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time']
@@ -789,8 +761,8 @@ def get_parameter(param_name):
     :return:
     """
     assert param_name in ('seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time')
-    if param_name=="r": return reward
-    else: return actr.get_parameter_value(":"+param_name)
+    #if param_name=="r": return reward
+    return actr.get_parameter_value(":"+param_name)
 
 def get_parameters(*kwargs):
     param_set = {}

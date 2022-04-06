@@ -95,7 +95,7 @@
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
-         :v t
+         ;:v t
          :trace-detail low
          ;:ult t
          ;:act t

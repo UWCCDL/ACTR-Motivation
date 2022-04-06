@@ -28,8 +28,8 @@
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-motivation-model1.lisp
-;;; Version     :v3.1
+;;; Filename    :simon-motivation-model4.lisp
+;;; Version     :v3.4
 ;;; 
 ;;; Description :This declarative model simulates simon task based on Boksem (2006)'s 
 ;;;              paradigm. This model takes motivation parameter as mental clock: 
@@ -63,7 +63,8 @@
 ;;;                    2/25 1) Encode feedback - post-error-slow? After negative feedback, adjust 
 ;;;                         motivation parameter - longer duration for checking, or more times of 
 ;;;                         checking
-;;;                    3/03 Add temporal buffer to inccorporate reward and time
+;;;                    3/03 DONE Add temporal buffer to inccorporate reward and time
+;;;                    4/06 DONE Add on-task off-task switch: mind-wandering
 ;;; 
 ;;; ----- History -----
 ;;;
@@ -92,17 +93,46 @@
 ;;; 
 ;;; Productions: 
 ;;; 
-;;; p find-screen ()
+;;; p mind-wandering-start() => mind-wandering-continue() => mind-wandering-back()
 ;;; p prepare-wm ()
+;;; p find-screen ()
+;;;
 ;;; p process-shape()
 ;;; p dont-process-shape()
 ;;; p process-location ()
 ;;; p dont-process-location ()
+;;;
 ;;; p check-pass()
 ;;; p check-detect-problem ()
 ;;; p respond()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; --------- CHUNK TYPE ---------
+
+
+(chunk-type task-status 
+            status
+            kind)
+
+;;; --------- DM ---------
+(add-dm 
+  (task-status isa chunk)
+  (status isa chunk)
+  (on-task isa chunk)
+  (off-task isa chunk)
+
+;;; --------- Task status ---------
+   (mind-focusing isa task-status
+         kind task-status
+         status on-task)
+        
+   (mind-wandering isa task-status
+         kind task-status
+         status off-task)
+
+)
+
 
 ;;; ----------------------------------------------------------------
 ;;; RESPONSE SELECTION
@@ -112,7 +142,7 @@
 ;;; A one-time check routine is also granted.
 ;;; ----------------------------------------------------------------
 
-(p retrieve-intended-response-m1
+(p retrieve-intended-response-m4
    "Retrieves the relevant part of the Simon Task rule"
    =visual>
      kind simon-stimulus
@@ -138,14 +168,35 @@
    +retrieval>
      kind simon-rule
      has-motor-response yes
-   !bind! =NEW-MOT (- =MOT 1)
+   !bind!       =CURRTIME (mp-time)
+   !bind!       =DURATION (- =CURRTIME =TIME)
+   !bind! =DIFF (- =MOT =DURATION)
    *goal>
      step       retrieve-rule
-     motivation   =NEW-MOT
-   !output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
+     motivation   =DIFF
+
+   !output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
+   ;;;!output! (in retrieve-intended-response()  (mp-time-ms))
 )
 
-(p check-pass-m1
+
+
+
+;;; ------------------------------------------------------------------
+;;; RESPONSE VERIFICATION AND PERFORMANCE MONITORING
+;;; ------------------------------------------------------------------
+;;; After selecting a response, the model has ONE-UNLIMITED chance to check
+;;; and correct any eventual mistake. The motivation chunk determines how
+;;; much effort this model decides to invest: redo retrieval once or redo
+;;; until correct rule when check-detect-problem fires. 
+;;; When check-pass fires, a positive reward will be given; while when
+;;; check-detect-problem fires or retrieval failure, a negative reward 
+;;; will be given. 
+
+;;; Check
+;;; Last time to catch yourself making a mistake
+
+(p check-pass-m4
    "Makes sure the response is compatible with the rules"
    =visual>
      shape =SHAPE
@@ -160,10 +211,11 @@
    
    ?imaginal>
      state free
-
+   
    =goal>
-     isa        phase
-     step       retrieve-rule
+     isa          phase
+     step         retrieve-rule
+     time-onset   =TIME
      motivation   =MOT
      > motivation   0 ;;; compete with dont-check, higher utility fires
 ==>
@@ -172,7 +224,75 @@
    =visual>
    =retrieval>
    =imaginal>
-     ;value2 nil
      checked yes
-   !output! (in check-pass() motivation is =MOT)
+   
+   !bind!       =CURRTIME (mp-time)
+   !bind!       =DURATION (- =CURRTIME =TIME)
+   !eval! (trigger-reward =DURATION)
+   !output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
+ )
+
+
+
+;;; ------------------------------------------------------------------
+;;; RETRIEVE-MIND-WANDERING
+;;; ------------------------------------------------------------------
+
+(p mind-wandering-start
+   "Sometimes agent might feel less engage"   
+   ?retrieval>
+     state free
+     buffer empty
+
+   =visual>
+     kind simon-stimulus
+    - shape nil
+     
+   =imaginal>
+     state process
+   - value1 nil
+   - value2 nil
+   
+   =goal>
+     isa        phase
+     step       attend-stimulus
+   - motivation nil
+   - time-onset nil
+==>
+   =visual>   ; Keep visual
+   =imaginal> ; Keep WM
+   +retrieval>
+     kind task-status
+   *goal>
+     step       mind-wandering
 )
+
+
+(p mind-wandering-continue   
+   =goal>
+     isa      phase
+     step     mind-wandering
+
+   =retrieval>
+     kind task-status
+     status   off-task
+==> 
+   =goal>
+   +retrieval>
+     kind task-status
+   )
+
+(p mind-wandering-back
+   =goal>
+     isa      phase
+     step     mind-wandering
+   
+   =retrieval>
+     kind task-status
+     status   on-task
+==> 
+   *goal>
+     isa      phase
+     step     attend-stimulus
+)
+
