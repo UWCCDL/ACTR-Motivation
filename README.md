@@ -42,3 +42,7 @@ model. _Cognition_, _164_, 31-45.
 Stocco, A. (2018). A Biologically Plausible Action Selection System
 for Cognitive Architectures: Implications of Basal Ganglia Anatomy for
 Learning and Decision‐Making Models. _Cognitive Science_.
+
+Boksem, M. A., Meijman, T. F., & Lorist, M. M. (2006). 
+Mental fatigue, motivation and action monitoring. 
+_Biological psychology, 72_(2), 123-132.
