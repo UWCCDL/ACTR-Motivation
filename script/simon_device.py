@@ -14,25 +14,30 @@ import os
 import actr
 import random
 import numpy as np
+import pandas as pd
+import json
 import time
 import scipy.optimize as opt
 
-SHAPES = ("CIRCLE", "SQUARE") 
+SHAPES = ("CIRCLE", "SQUARE")
 LOCATIONS = ("LEFT", "RIGHT")
 CONDITIONS = ("CONGRUENT", "INCONGRUENT")
 
-SIMON_MAPPINGS = {"CIRCLE" : "LEFT", "SQUARE" : "RIGHT"}
-RESPONSE_MAPPINGS = {"LEFT" : "f", "RIGHT" : "j"}
+SIMON_MAPPINGS = {"CIRCLE": "LEFT", "SQUARE": "RIGHT"}
+RESPONSE_MAPPINGS = {"LEFT": "f", "RIGHT": "j"}
+CUE_CONDITIONS = ("CONGRUENT-VALID", "CONGRUENT-INVALID", "INCONGRUENT-VALID", "INCONGRUENT-INVALID")
+
 random.seed(100)
 
 
 class SimonStimulus:
     """An abstract Stroop task stimulus"""
-    def __init__(self, shape, location):
-        if shape in SHAPES:
-            self.shape = shape
-            self.location = location
-            
+
+    def __init__(self, shape, location, cue):
+        assert (shape in SHAPES and location in LOCATIONS and cue in LOCATIONS)
+        self.shape = shape
+        self.location = location
+        self.cue = cue
 
     @property
     def location(self):
@@ -51,6 +56,14 @@ class SimonStimulus:
         self._shape = val
 
     @property
+    def cue(self):
+        return self._cue
+
+    @cue.setter
+    def cue(self, val):
+        self._cue = val
+
+    @property
     def congruent(self):
         if SIMON_MAPPINGS[self.shape] == self.location:
             return True
@@ -63,7 +76,21 @@ class SimonStimulus:
             return True
         else:
             return False
-        
+
+    @property
+    def valid(self):
+        if SIMON_MAPPINGS[self.shape] == self.cue:
+            return True
+        else:
+            return False
+
+    @property
+    def invalid(self):
+        if SIMON_MAPPINGS[self.shape] != self.cue:
+            return True
+        else:
+            return False
+
     @property
     def kind(self):
         """Returns the trial type (congruent, incongruent)"""
@@ -73,16 +100,26 @@ class SimonStimulus:
         elif self.incongruent:
             res = "incongruent"
         return res
-        
+
+    @property
+    def cue_kind(self):
+        """Returns the cue type (valid, invalid)"""
+        res = ""
+        if self.valid:
+            res = "valid"
+        elif self.invalid:
+            res = "invalid"
+        return res
+
     def __str__(self):
-        return "<[%s]'%s' at %s>" % (self.kind, self.shape, self.location)
+        return "<[%s]'%s' at %s; cue: '%s' is [%s]>" % (self.kind, self.shape, self.location, self.cue, self.cue_kind)
 
     def __repr__(self):
         return self.__str__()
 
-
 class SimonTrial:
     """A class for recording a Stroop trial"""
+
     def __init__(self, stimulus):
         """Inits a stroop trial"""
         self.stimulus = stimulus
@@ -92,18 +129,25 @@ class SimonTrial:
         "Sets up properly"
         self.shape = self.stimulus.shape
         self.location = self.stimulus.location
+        self.cue = self.stimulus.cue
         self.onset = 0.0
         self.offset = 0.0
         self.response = None
+        # record the utility vlaue of each productions during model running
+        self.utility_trace = []  # record ':u' values for 4 competitive productions
+        self.cost_trace = []  # record ':at' for 4 competitive productions
+        self.chunk_trace = []      # record ':activation' for 2 simon rules
 
+
+    ################# BEHAVIOR LOG #####################
     @property
     def correct_response(self):
         return RESPONSE_MAPPINGS[SIMON_MAPPINGS[self.shape]]
-        
+
     @property
     def accuracy(self):
         if self.response is not None and \
-           self.response == self.correct_response:
+                self.response == self.correct_response:
             return 1.0
         else:
             return 0.0
@@ -112,67 +156,345 @@ class SimonTrial:
     def response_time(self):
         return self.offset - self.onset
 
+    ################# ACT-R TRACE LOG #####################
+    @property
+    def utility_trace(self):
+        """
+        This property defines the actr parameter traces
+        Trace follow the dict format: self.utility_trace = [(production1, paramter1, value1), ...]
+        """
+        return self._utility_trace
 
-def generate_stimuli(shuffle = True):
-    "Generates stimuli according to the Stocco(2016) paradigm" 
-    congr = [("CIRCLE", "LEFT"), ("SQUARE", "RIGHT")]
-    incongr = [("CIRCLE", "RIGHT"), ("SQUARE", "LEFT")]
+    @utility_trace.setter
+    def utility_trace(self, trace):
+        self._utility_trace = trace
 
-    lst = congr * 10 + incongr * 10
+    @property
+    def cost_trace(self):
+        """
+        This property defines the actr production :at parameter traces
+        Trace follow the dict format: self.cost_trace = [(production1, paramter1, value1), ...]
+        """
+        return self._cost_trace
+
+    @cost_trace.setter
+    def cost_trace(self, trace):
+        self._cost_trace = trace
+
+    @property
+    def chunk_trace(self):
+        """
+        This property defines the actr parameter traces
+        Trace follow the dict format: self.chunk_trace = [(chunk1, paramter1, value1), ...]
+        """
+        return self._chunk_trace
+
+    @chunk_trace.setter
+    def chunk_trace(self, trace):
+        self._chunk_trace = trace
+
+def generate_stimuli(shuffle=True, n_trials=20, valid_cue_percentage=0.5):
+    "Generates stimuli according to the Boksem(2006)'s paradigm"
+    congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
+    incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
+    congr_invalid = [("CIRCLE", "LEFT", "RIGHT"), ("SQUARE", "RIGHT", "LEFT")]
+    incongr_invalid = [("CIRCLE", "RIGHT", "RIGHT"), ("SQUARE", "LEFT", "LEFT")]
+
+    valid = congr_valid * int(n_trials * (valid_cue_percentage)) + incongr_valid * int(
+        n_trials * (valid_cue_percentage))
+    invalid = congr_invalid * int(n_trials * (1 - valid_cue_percentage)) + incongr_invalid * int(
+        n_trials * (1 - valid_cue_percentage))
+    lst = valid + invalid
 
     if shuffle:  # Randomized if needed
         random.shuffle(lst)
-    
-    return [SimonStimulus(shape = x[0], location = x[1]) for x in lst]
+
+    return [SimonStimulus(shape=x[0], location=x[1], cue=x[2]) for x in lst]
 
 
 class SimonTask:
     """A simple version of the Stroop task"""
-    def __init__(self, stimuli=generate_stimuli(), setup=False):
-        """Initializes a Stroop task (if there are stimuli)""" 
+
+    def __init__(self, stimuli=generate_stimuli(), setup=False, param_set=None):
+        """Initializes a Stroop task (if there are stimuli)
+           motivation_value is the chunk set to goal buffer that counts for how many times
+           the model attempts to retrieve until reaching correct rule
+        """
         if len(stimuli) > 0:
             self.stimuli = stimuli
             if setup:
                 self.setup()
+                
+        # set motivation parameters
+        self.set_motivation_parameters(param_set)
+            
 
-        
     def setup(self, win=None):
         """Sets up and prepares for first trial"""
         self.window = win
         self.index = 0
-        self.log = []
+        self.log = []   # log behaviral
         self.phase = "fixation"
         self.trial_trace = True
         self.current_trial = SimonTrial(self.stimuli[self.index])
-        self.update_window()
-        actr.schedule_event_relative(1, "stroop-next")
 
+    #################### STIMULUS DISPLAY ####################
+    def fixation(self):
+        #print("in fixation", self.phase)
+        actr.clear_exp_window()
+        item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
+                                           x=400, y=300,
+                                           color="black")
+        stim = self.current_trial.stimulus
+        shape = stim.shape.upper()
+        location = stim.location.upper()
+        kind = stim.kind.upper()
+        cue = stim.cue.upper()
+        cue_kind = stim.cue_kind.upper()
+        if self.trial_trace:
+            print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s CUE %s [%s])" % (kind, shape, location, cue, cue_kind))
+
+    def cue(self):
+        #print("in cue", self.phase)
+        actr.clear_exp_window()
+        cue = self.current_trial.stimulus.cue
+        item = actr.add_visicon_features(
+            ['isa', ['simon-stimulus-location', 'simon-cue'], 'kind', 'simon-cue',
+             'screen-x', 400, 'screen-y', 300,
+             'shape', None, 'color', 'black', 'cue', cue])
+
+    def stimulus(self):
+        #print("TEST in stimulus()", self.phase)
+        actr.clear_exp_window()
+        shape = self.current_trial.stimulus.shape
+        location = self.current_trial.stimulus.location
+        item = actr.add_visicon_features(
+            ['isa', ['simon-stimulus-location', 'simon-stimulus'], 'kind', 'simon-stimulus',
+             'screen-x', 200, 'screen-y', 300,
+             'shape', shape, 'color', 'black', 'location', location])
+        for i, shape in enumerate(SIMON_MAPPINGS):
+            item = actr.add_text_to_exp_window(self.window,
+                                               RESPONSE_MAPPINGS[SIMON_MAPPINGS[shape]],
+                                               x=600 + i * 50,
+                                               y=500)
+
+    def done(self):
+        actr.clear_exp_window()
+        item = actr.add_text_to_exp_window(self.window, "done", x=400, y=300)
+
+    def add_actr_commands(self):
+        """
+        This function adds all necessary act-r commands before model running
+        functions:
+            self.set_motivation() - set motivation parameter to goal buffer
+            self.fixation() - display fixation on the screen
+            self.cue() - display simon-cue on the screen and modify model's visicon features
+            self.stimulus() - dispaly simon-stimulus on the screen and modify model's visicon features
+            self.accept_response() - record model's response in self.log
+            self.verify_reward() - check whether the model receives reward
+        """
+        actr.add_command("stroop-set-motivation", self.set_motivation, "Set motivation parameter for the model")
+        actr.add_command("stroop-update-cost", self.update_cost, "Update cost :at for the model")
+        actr.add_command("stroop-update-fixation", self.fixation, "Update window: fixation")
+        actr.add_command("stroop-update-cue", self.cue, "Update window: cue")
         
+        actr.add_command("stroop-update-stimulus", self.stimulus, "Update window: stimulus")
+        actr.add_command("stroop-accept-response", self.accept_response, "Accepts a response for the Stroop task")
+        actr.add_command("stroop-deliver-rewards", self.deliver_rewards, "Delivers a reward")
+        actr.monitor_command("output-key", "stroop-accept-response")
+        actr.add_command("reward-check",self.verify_reward, "Check for a reward delivery each trial.") 
+        actr.monitor_command("trigger-reward","reward-check")
+    
+    def remove_actr_commands(self):
+        """
+        This function removes all added act-r commands after model is done
+        """
+        actr.remove_command("stroop-set-motivation")
+        actr.remove_command("stroop-update-cost")
+        actr.remove_command("stroop-update-fixation")
+        actr.remove_command("stroop-update-cue")
+        
+        actr.remove_command_monitor("output-key", "stroop-accept-response")
+        actr.remove_command("stroop-accept-response")
+        actr.remove_command_monitor("trigger-reward","reward-check")
+        actr.remove_command("reward-check")
+        actr.remove_command("stroop-update-stimulus")
+        actr.remove_command("stroop-deliver-rewards")
+
+    def update_window(self, time=200):
+        if self.phase == "done":
+            self.done()
+            actr.run(time)
+        elif self.phase == "fixation":
+            #  MOTIVATION PARAMETER
+            actr.schedule_event_now("stroop-set-motivation") 
+            actr.schedule_event_relative(0.01,"stroop-update-fixation") 
+            #self.set_motivation()
+            #self.fixation()
+            actr.run(time)
+            #actr.run_full_time(10)
+            #actr.run_until_time(0.15)
+           
+            self.phase = "cue"
+            self.update_window()
+        elif self.phase == "cue":
+            actr.schedule_event_relative(0.01,"stroop-update-cue") 
+            #self.cue()
+            actr.run(time)
+            self.phase = "stimulus"
+            self.update_window()
+        elif self.phase == "stimulus":
+            self.current_trial.onset = actr.mp_time()
+            #print('self.current_trial.onset', self.current_trial.onset)
+            
+            # update window
+            actr.schedule_event_relative(0.01,"stroop-update-stimulus") 
+            #self.stimulus()
+
+            actr.run(time)
+            # DELIVER REWARD PARAMETER TO PRODUCTION
+            #self.deliver_rewards()
+            actr.schedule_event_now("stroop-deliver-rewards") 
+            
+            self.current_trial.offset = actr.mp_time()
+
+            # NEW: record the production utility
+            self.current_trial.utility_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':u'),
+                                                 self.extract_production_parameter('PROCESS-LOCATION', ':u'),
+                                                 self.extract_production_parameter('DONT-PROCESS-SHAPE', ':u'),
+                                                 self.extract_production_parameter('DONT-PROCESS-LOCATION', ':u')]
+            # record activation
+            self.current_trial.chunk_trace = [self.extract_chunk_parameter('CIRCLE-LEFT', ':Last-Retrieval-Activation'),
+                                              self.extract_chunk_parameter('SQUARE-RIGHT', ':Last-Retrieval-Activation')]
+
+            # record cost
+            self.current_trial.cost_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':at'),
+                                           self.extract_production_parameter('PROCESS-LOCATION', ':at'),
+                                           self.extract_production_parameter('DONT-PROCESS-SHAPE', ':at'),
+                                           self.extract_production_parameter('DONT-PROCESS-LOCATION', ':at')]
+
+            # record cost
+
+            #print('self.current_trial.offset', self.current_trial.offset)
+
+            self.index += 1
+            self.log.append(self.current_trial)
+            if self.index >= len(self.stimuli):
+                self.phase = "done"
+            else:
+                self.current_trial = SimonTrial(self.stimuli[self.index])
+                self.phase = "fixation"
+
+            # update cost
+            self.update_cost()
+
+            # proceed to next trial
+            self.update_window()
+
+        # remove actr commands
+        #self.remove_actr_commands()
+
+    def accept_response(self, model, response):
+        """A valid response is a key pressed during the 'stimulus' phase"""
+        if self.phase == "stimulus":
+            self.current_trial.response = response
+        #print("TEST accept_response()", self.current_trial.response, self.current_trial.stimulus)
+
+    #################### ACT-R COMMAND ####################
+    def deliver_rewards(self, verbose=False):
+        """
+        This function delivers reward to productions. The production name and rewards are set
+        as parameter at the begining
+        self.parameters['production_reward_pairs'] = [('CHECK-PASS', 0.1), ('RESPOND', -0.1)]
+        """
+        # print("TEST in deliver_rewards()", self.phase)
+        # if (self.phase == "fixation") and self.parameters['production_reward_pairs']:
+        if self.parameters['production_reward_pairs']:
+            for production_name, reward_value in self.parameters['production_reward_pairs']:
+                if production_name in actr.all_productions():
+                    actr.spp(production_name, ':reward', reward_value)
+                    if verbose: print("DELIVER REWARD:", reward_value, ">>>", production_name)
+                else:
+                    if verbose: print("WRONG PRODUCTION NAME", production_name, reward_value)
+        else:
+            if verbose: print("No reward delivered: ", self.parameters['production_reward_pairs'])
+
+    def set_motivation(self):
+        """
+        This function set motivation value to goal buffer
+        """
+        # SET GOAL (motivation value)
+        # print("TEST, in set_motivation()")
+        if self.phase == "fixation" and self.parameters['motivation']:
+            actr.set_buffer_chunk('goal', actr.define_chunks(['isa', 'phase', 'step', 'attend-fixation',
+                                                              'time-onset', actr.mp_time(),  # mental clock
+                                                              'motivation', self.parameters['motivation']])[0])
+
+    def verify_reward(self, *params):
+        #print('TEST: in verify_reward() there is a reward being given')
+        # actr.pp()
+        pass
+
+    def cost_function(self, c=0.002):
+        """
+        Define the function of cost increases as time
+        """
+        return np.round(0.05 + np.square(actr.mp_time() * c), 2)
+        # return np.round(0.05 + np.square(actr.mp_time()*c), 2)
+
+    def update_cost(self):
+        """
+        Update the cost for production by updating :at
+        """
+        if self.phase == "fixation":
+            new_at = self.cost_function()
+            actr.hide_output()
+            actr.spp(":at", new_at)
+            actr.unhide_output()
+            # print('TEST: cost: new :at', new_at)
+
+    #################### ACTR STATS ANALYSIS ####################
+    def set_motivation_parameters(self, param_set):
+        """
+        This function sets motivation related parameters into a dict form
+        self.parameters = {"motivation": 1, default value = 1
+                           "production_reward_pairs": [("CHECK-PASS", 0.1), ("CHECK-DETECT-PROBLEM-UNLIMITED", -0.1)]}
+        """
+        self.parameters = {}
+        if param_set and ('motivation' in param_set.keys()):
+            self.parameters['motivation'] = param_set['motivation']
+        else:
+            self.parameters['motivation'] = 1  # default value
+        if param_set and ('production_reward_pairs' in param_set.keys()):
+            self.parameters['production_reward_pairs'] = param_set['production_reward_pairs']
+        else:
+            self.parameters['production_reward_pairs'] = None
+        # print("TEST in set_motivation_parameters()", self.parameters)
+
     def run_stats(self):
         """Returns some aggregate analysis of model behavior.
-        Stats are calculated only when the model successfully completes the task. 
-        When data are missing or the experiment is not completed, NA values 
+        Stats are calculated only when the model successfully completes the task.
+        When data are missing or the experiment is not completed, NA values
         are returned
         """
-        R = dict(zip(CONDITIONS, [(0, np.nan, np.nan)] * 2))
-        
-        if len(self.log) > 0:  
-            
-            cong = [x for x in self.log if x.stimulus.congruent]
-            incn = [x for x in self.log if x.stimulus.incongruent]
-            #neut = [x for x in self.log if x.stimulus.neutral]
+        R = dict(zip(CUE_CONDITIONS, [(0, np.nan, np.nan)] * len(CUE_CONDITIONS)))
 
-            for cond, data in zip(CONDITIONS,
-                                  [cong, incn]):
+        if len(self.log) > 0:
+
+            cong_valid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.valid)]
+            incn_valid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.valid)]
+            cong_invalid = [x for x in self.log if (x.stimulus.congruent & x.stimulus.invalid)]
+            incn_invalid = [x for x in self.log if (x.stimulus.incongruent & x.stimulus.invalid)]
+
+            # for cond, data in zip(CONDITIONS, [cong, incn]):
+            for cond, data in zip(CUE_CONDITIONS, [cong_valid, cong_invalid, incn_valid, incn_invalid]):
                 if len(data) > 0:
                     acc = sum([x.accuracy for x in data]) / len(data)
                     rt = sum([x.response_time for x in data]) / len(data)
-                    
-                    R[cond] = (len(data), acc, rt)
-            
-        return R
 
-                
+                    R[cond] = (len(data), acc, rt)
+
+        return R
 
     def print_stats(self, stats={}):
         """Pretty prints stats about the experiment"""
@@ -181,176 +503,128 @@ class SimonTask:
             print("%s (N=%d): Accuracy = %.2f, Response Times = %.2f ms" % \
                   (cond, n, acc, rt * 1000))
 
-    def modify_stimulus_feature(self):
-        """Cheap hack to remoe strings from visual objects AFTER the visual object
-        has been created through the standard 'exp-window' methods. The algorithm 
-        takes advantage of the fact that visual features are named in a predictable way,
-        with one feature for every item added to the window. During each trial, N = 5
-        items are added to the window (the main stimulus, three response buttons, and
-        one fixation), thus making it possible to calculate the feature ID as such:
-        
-             ID = N * I + 1
-             
-        where N = 5 = number of features per trial, and I = trial index.
+    def df_stats_model_outputs(self):
+        df = pd.DataFrame()
+        df['trial'] = [i + 1 for i in range(len(self.log))]
+        df['time'] = [t.onset for t in self.log]
+        df['accuracy'] = [t.accuracy for t in self.log]
+        df['response_time'] = [t.response_time for t in self.log]
+        df['condition_stimulus'] = [t.stimulus.kind for t in self.log]
+        df['condition_cue'] = [t.stimulus.cue_kind for t in self.log]
+        df['stimulus_shape'] = [t.stimulus.shape for t in self.log]
+        df['stimulus_location'] = [t.stimulus.location for t in self.log]
+        return df
+
+    def df_stats_post_error(self):
         """
-        id = 5 * self.index + 1
-        feature = "visicon-id%d" % (id,)
-        shape = self.current_trial.stimulus.shape
-        location = self.current_trial.stimulus.location
-        #print("TEST:modify_stimulus_feature", shape, location, feature)
-        #actr.modify_visicon_features([feature, "value", text.upper()])
-        actr.modify_visicon_features([feature, "shape", shape.upper(), "location", location.upper()])
-        #actr.print_visicon()
-            
-            
-    def update_window(self):
-        """Updates the experiment window"""
-        if self.window is not None:
-            # First, clean-up
-            actr.clear_exp_window()
-            
-            shape = self.current_trial.stimulus.shape.upper()
-            location = self.current_trial.stimulus.location.upper()
-            kind = self.current_trial.stimulus.kind.upper()
-
-            # Then, add new elements
-            if self.phase == "fixation":
-                item = actr.add_text_to_exp_window(self.window, "+", font_size=50,
-                                                   x = 400, y = 300,
-                                                   color = "black")
-                #time.sleep(1)
-            
-            elif self.phase == "stimulus":
-                actr.clear_buffer("VISUAL")
-                if location == "LEFT":
-                    x = 250
+        This function organizes model output data into post-correct and post-error category
+        """
+        if len(self.log) == len(self.stimuli):
+            corrects = []
+            errors = []
+            for j in range(len(self.log) - 1):
+                if self.log[j].accuracy == 0:
+                    errors.append(self.log[j + 1])
                 else:
-                    x = 550
-                #item = actr.add_text_to_exp_window(self.window, shape,
-                #                                   x=x, y=300)
-                #print("TEST:update_window", shape, location)
-                actr.clear_buffer("VISUAL")
-                item = actr.add_visicon_features(['isa', ['simon-stimulus-location', 'simon-stimulus'], 'kind', 'simon-stimulus',
-                           'screen-x', x, 'screen-y', 300, #'value', ('circle', "'circle 1'"),
-                           'shape', shape, 'color', 'black', 'location', location])
-                #actr.add_items_to_exp_window(self.window, item)
-                #actr.print_visicon()
+                    corrects.append(self.log[j + 1])
+            df_corrects = pd.DataFrame({'response_time': [x.response_time for x in corrects],
+                                        'trial_type': ["post_correct"] * len(corrects)})
+            df_errors = pd.DataFrame({'response_time': [x.response_time for x in errors],
+                                      'trial_type': ["post_errors"] * len(errors)})
+            df_curr = pd.concat([df_corrects, df_errors], axis=0)
+        return df_curr
 
-                for i, shape in enumerate(SIMON_MAPPINGS):
-                    item = actr.add_text_to_exp_window(self.window,
-                                                       RESPONSE_MAPPINGS[SIMON_MAPPINGS[shape]],
-                                                       x = 600 + i * 50,
-                                                       y = 500)
-                #time.sleep(2)
-                actr.schedule_event_relative(0.001, "stroop-modify-stimulus-feature", params=[])
+    #################### ACTR TRACE DATA ####################
 
-            elif self.phase == "done":
-                shape = self.current_trial.shape
-                location = self.current_trial.location
-                item = actr.add_text_to_exp_window(self.window, "done",
-                                                   x=395, y= 300)
-                #actr.delete_all_visicon_features()
-                #print("TEST actr.print_visicon():")
-                #actr.print_visicon()
+    def extract_production_parameter(self, production_name, parameter_name):
+        """
+        This function will extract the parameter value of a production during model running
+        """
+        assert (production_name in actr.all_productions() and
+                parameter_name in [':u', ':utility', ':at', ':reward', ':fixed-utility'])
+        actr.hide_output()
+        value = actr.spp(production_name, parameter_name)[0][0]
+        actr.unhide_output()
+        return (production_name, parameter_name, value)
 
-                
-    def accept_response(self, model, response):
-        """A valid response is a key pressed during the 'stimulus' phase"""
-        if self.phase == "stimulus":
-            self.current_trial.response = response
-            actr.schedule_event_now("stroop-next") 
-            
-    def next(self):
-        """Moves on in th task progression"""
-        if self.phase == "fixation":
-            self.phase = "stimulus"
-            self.current_trial.onset = actr.mp_time()
-            
-            # If we plan to record the trace, print a marker
-            if self.trial_trace:
-                stim = self.current_trial.stimulus
-                shape = stim.shape.upper()
-                location = stim.location.upper()
-                kind = stim.kind.upper()
-            
-                print("NEW %s SIMON TRIAL: (SHAPE %s LOCATION %s)" % (kind, shape, location))
+    def extract_chunk_parameter(self, chunk_name, parameter_name):
+        """
+        This function will extract the parameter value of a chunk during model running
+        """
+        try:
+            actr.hide_output()
+            value = actr.sdp(chunk_name, parameter_name)[0][0]
+            actr.unhide_output()
+            return (chunk_name, parameter_name, value)
+        except:
+            print('ERROR: WRONG', chunk_name, parameter_name)
 
-        elif self.phase == "stimulus":
-            self.current_trial.offset = actr.mp_time()
-            self.index += 1
-            self.log.append(self.current_trial)
-            if self.index >= len(self.stimuli):
-                self.phase = "done"
-
-            else:
-                self.current_trial = SimonTrial(self.stimuli[self.index])
-                self.phase = "fixation"
-                actr.schedule_event_relative(1, "stroop-next")
-
-        actr.schedule_event_now("stroop-update-window")
+    def process_trace_data(self):
+        """
+        This function process trace data recorded in self.log
+        """
+        dfo = self.df_stats_model_outputs()
+        df_u = pd.DataFrame([[p[2] for p in t.utility_trace] for t in self.log],
+                           columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='production', value_name=':u')
+        df_at = pd.DataFrame([[p[2] for p in t.cost_trace] for t in self.log],
+                           columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='production', value_name=':at')
+        dfc = pd.DataFrame([[c[2] for c in t.chunk_trace] for t in self.log],
+                           columns=['CIRCLE-LEFT', 'SQUARE-RIGHT'],
+                           index=dfo.time).reset_index().melt(id_vars='time', var_name='rule', value_name=':activation')
+        dfp = pd.merge(df_u, df_at, how='inner', on=['time', 'production'])
+        df = dfo.merge(pd.merge(dfp, dfc, how='left', on='time'), how='right', on='time').sort_values(by='trial')
+        return df
 
 
-def run_experiment(model="simon",
+###################################################
+####                SIMULATION                   ##
+###################################################
+def run_experiment(model="simon-motivation-model3",
                    time=200,
                    verbose=True,
                    visible=True,
                    trace=True,
-                   param_set=None, 
-                   reload=True):
+                   param_set=None,
+                   reload=True, 
+                   record_history=None): 
     """Runs an experiment"""
-    
+
     # Everytime ACT-R is reloaded, all parameters are set to init
     if reload: load_model(model, param_set)
-    # Set then model parameters
-    #for name, val in params:
-    #    actr.set_parameter_value(name, val)
-    
-    win = actr.open_exp_window("* SIMON TASK *", width = 800,
-                               height = 600, visible=visible)
+    if record_history: actr.record_history(record_history)
+
+    win = actr.open_exp_window("* SIMON TASK *", width=800,
+                               height=600, visible=visible)
 
     actr.install_device(win)
-
-    task = SimonTask(setup=False)
-    #print("TEST SIMON TASK:", task.stimuli)
-    #task.window = win
-
-    actr.add_command("stroop-next", task.next,
-                     "Updates the internal task")
-    actr.add_command("stroop-update-window", task.update_window,
-                     "Updates the window")
-    actr.add_command("stroop-accept-response", task.accept_response,
-                     "Accepts a response for the Stroop task")
-    actr.add_command("stroop-modify-stimulus-feature", task.modify_stimulus_feature,
-                    "Post-hoc removal of strings from stimuli features")
-    actr.monitor_command("output-key",
-                         "stroop-accept-response")
-
+    task = SimonTask(setup=False, param_set=param_set)
+    #print("TEST: in run_experiment()", task.parameters)
     task.setup(win)
     if not trace:
-        actr.set_parameter_value(":V", False)
+        actr.set_parameter_value(":v", False)
         task.trial_trace = False
-    actr.run(time)
+    
+    task.add_actr_commands()
+    task.update_window(time)
+    task.remove_actr_commands()
+    
     if verbose:
         print("-" * 80)
         task.print_stats(task.run_stats())
+    if record_history: 
+        actr.save_history_data(record_history, file=os.path.dirname(os.path.realpath('__file__'))+f'/actr_traces/{record_history}-trace.txt')
+        actr.stop_recording_history(record_history)
 
-    # Cleans up the interface
-    # (Removes all the links between ACT-R and this object).
-
-    actr.remove_command_monitor("output-key",
-                                "stroop-accept-response")
-    actr.remove_command("stroop-next")
-    actr.remove_command("stroop-update-window")
-    actr.remove_command("stroop-accept-response")
-    actr.remove_command("stroop-modify-stimulus-feature")
-    
     # Returns the task as a Python object for further analysis of data
     return task
 
+
 def simulate_behavior(model, param_set=None, n=100, verbose=False):
     """Simulates N runs of the model"""
-    accuracy_res = np.zeros((n, len(CONDITIONS)))
-    rt_res = np.zeros((n, len(CONDITIONS)))
+    accuracy_res = np.zeros((n, len(CUE_CONDITIONS)))
+    rt_res = np.zeros((n, len(CUE_CONDITIONS)))
     for j in range(n):
         if verbose: print("Run #%03d" % j)
         task = run_experiment(model,
@@ -359,32 +633,31 @@ def simulate_behavior(model, param_set=None, n=100, verbose=False):
                               trace=False,
                               param_set=param_set)
         stats = task.run_stats()
-        accuracy_res[j] = np.array([stats[x][1] for x in CONDITIONS])
-        rt_res[j] = np.array([stats[x][2] for x in CONDITIONS])
+        accuracy_res[j] = np.array([stats[x][1] for x in CUE_CONDITIONS])
+        rt_res[j] = np.array([stats[x][2] for x in CUE_CONDITIONS])
 
-    return accuracy_res, rt_res#res.mean(0) # Column mean
+    return accuracy_res, rt_res
 
 
-#VERSTYNEN = [0.720, 0.755, 0.810] # Verstynen's original results
-STOCCO = {"ACCURACY_MEAN":[0.98, 0.88], "ACCURACY_SD":[0.10, 0.03],
-          "RT_MEAN":[0.421, 0.489], "RT_SD":[0.073, 0.088]}
+BOKSEM1 = pd.DataFrame({'condition':['incongruent', 'congruent'], 'accuracy':[1-0.153, 1-0.075], 'response_time':[0.483, 0.451]}) 
+BOKSEM2 = pd.DataFrame({'condition':['invalid', 'valid'], 'accuracy':[1-0.157, 1-0.071], 'response_time':[0.488, 0.446]}) 
 
 
 def stats_qc(stats):
-    """Quality check for data stats. A good set of aggregagated data should have the 
+    """Quality check for data stats. A good set of aggregagated data should have the
     following characteristics:
-    
+
     1. A correct number of trials for each condition (N = 20, 20)
     2. All the data should be real numbers, and no NaN should be present
     """
     if len(stats) == 3:
         numtrials_check = True
-        for condition, expected in list(zip(CONDITIONS, [20,20])):
+        for condition, expected in list(zip(CONDITIONS, [20, 20])):
             if stats[condition][0] is not expected:
                 numtrials_check = False
-        
+
         if numtrials_check:
-            # If we have the correct number of trials, let's make sure we have 
+            # If we have the correct number of trials, let's make sure we have
             # sensible accuracies and rt values
             allvalues = []
             for condition in CONDITIONS:
@@ -399,13 +672,12 @@ def stats_qc(stats):
     else:
         return False
 
-
-def model_error(model, n=25, param_set=None, observed=STOCCO):
+def model_error(model, n=2, param_set=None, observed=BOKSEM1):
     """Loss function for the model (RMSE)"""
     predicted_accuracy, predicted_rt = simulate_behavior(model, param_set, n)
-    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed['ACCURACY_MEAN'])**2
+    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed["accuracy"]) ** 2
     res_accuracy = np.round(np.sqrt(np.mean(sqerr_accuracy)), 4)
-    sqerr_rt = (predicted_rt.mean(axis=0) - observed['RT_MEAN'])**2
+    sqerr_rt = (predicted_rt.mean(axis=0) - observed['rt']) ** 2
     res_rt = np.round(np.sqrt(np.mean(sqerr_rt)), 4)
     if res_accuracy is np.nan:
         res_accuracy = 100000000
@@ -414,35 +686,69 @@ def model_error(model, n=25, param_set=None, observed=STOCCO):
     print("MODEL (RMSE): (ACCURACY: %s \tRT: %s)" % (res_accuracy, res_rt))
     return res_accuracy, res_rt
 
-def chery_model_error(model="simon", param_set={"ans":0.1, "mas":0.5}):
+def model_error_old(model, n=25, param_set=None, observed=BOKSEM1):
+    """Loss function for the model (RMSE)"""
+    predicted_accuracy, predicted_rt = simulate_behavior(model, param_set, n)
+    sqerr_accuracy = (predicted_accuracy.mean(axis=0) - observed['ACCURACY_MEAN']) ** 2
+    res_accuracy = np.round(np.sqrt(np.mean(sqerr_accuracy)), 4)
+    sqerr_rt = (predicted_rt.mean(axis=0) - observed['RT_MEAN']) ** 2
+    res_rt = np.round(np.sqrt(np.mean(sqerr_rt)), 4)
+    if res_accuracy is np.nan:
+        res_accuracy = 100000000
+    if res_rt is np.nan:
+        res_rt = 100000000
+    print("MODEL (RMSE): (ACCURACY: %s \tRT: %s)" % (res_accuracy, res_rt))
+    return res_accuracy, res_rt
+
+def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
     return model_error(model, n=50, param_set=param_set)
 
 # Example:
 
-#res = opt.minimize(stroop.micah_model_error, [1.5], method='nelder-mead', options={'disp':True}) 
+# res = opt.minimize(stroop.micah_model_error, [1.5], method='nelder-mead', options={'disp':True})
 
 
 #################### LOAD MODEL CORE ####################
-def load_model(model="simon", param_set=None, verbose=True):
+def load_model(model="simon-motivation-model3", param_set=None, verbose=True):
     """
-    Load simon-core.lisp and simon-body.lisp and print current parameter sets
-    Set parameters using param_set {"ans":0.1, "lf":0.5}
+    Load simon-core.lisp + simon-base.lisp + simon-motivation-modelx.lisp,and print current parameter sets
+    Set parameters using param_set {"ans":0.1, "lf":0.5, "motivation":1, "production_reward_pairs":[("CHECK-PASS", 0.1), ("", 0.1)]}
     """
     curr_dir = os.path.dirname(os.path.realpath('__file__'))
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-core.lisp"))
+    
+    # load model-core.lisp + model-base.lisp 
+    actr.load_act_r_model(os.path.join(curr_dir, "simon-core.lisp"))
+    actr.load_act_r_model(os.path.join(curr_dir, "simon-base.lisp"))
+    
+    # diable duplicate productions
+    actr.pdisable('CHECK-PASS', 'RETRIEVE-INTENDED-RESPONSE')
+    
     # load new pramsets
-    if param_set: set_parameters(**param_set)
-    actr.load_act_r_model(os.path.join(curr_dir, model+"-body.lisp"))
+    if param_set: 
+        actr_param_set = param_set.copy()
+        if "motivation" in param_set.keys(): actr_param_set.pop("motivation")
+        if "production_reward_pairs" in param_set.keys(): actr_param_set.pop("production_reward_pairs")
+        set_parameters(**actr_param_set)
+    
+     # load model-x.lisp 
+    actr.load_act_r_model(os.path.join(curr_dir, model+".lisp"))
+    
     if verbose:
-        print("######### LOADED MODEL " +actr.current_model()+ " #########")
-        print(">>", get_parameters(*get_parameters_name()), "<<")
-
-def check_load(model_name="competitive-simon-py"):
-    has_model = actr.current_model().lower() == model
+        print("######### LOADED MODEL " +model+ " #########")
+        print(">> ACT-R: ", get_parameters(*get_parameters_name()), "<<") 
+        try: param_set_motivation = param_set["motivation"]
+        except: param_set_motivation = 1
+        try: param_set_reward = param_set["production_reward_pairs"]
+        except: param_set_reward = None
+        print(">> motivation param: ", param_set_motivation, "<<")
+        print(">> production_reward_pairs param: ", param_set_reward, "<<")
+        
+def check_load(model_name="simon-motivation-model3"):
+    has_model = actr.current_model().lower() == model_name
     has_productions = actr.all_productions() != None
     return has_model & has_productions
 
-#################### PARAMETER SET ####################
+#################### ACTR PARAMETER SET ####################
 
 def get_parameters_name():
     param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time']
@@ -455,8 +761,8 @@ def get_parameter(param_name):
     :return:
     """
     assert param_name in ('seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time')
-    if param_name=="r": return reward
-    else: return actr.get_parameter_value(":"+param_name)
+    #if param_name=="r": return reward
+    return actr.get_parameter_value(":"+param_name)
 
 def get_parameters(*kwargs):
     param_set = {}
@@ -470,7 +776,7 @@ def set_parameters(**kwargs):
     :param kwargs: dict pair, indicating the parameter name and value (e.g. ans=0.1, r1=1, r2=-1)
     :return:
     """
-    global reward
     for key, value in kwargs.items():
-        if key == "r": reward = value
-        else: actr.set_parameter_value(':' + key, value)
+        actr.set_parameter_value(':' + key, value)
+
+

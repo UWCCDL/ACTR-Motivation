@@ -22,27 +22,48 @@
 ;;;  -*- mode: LISP; Syntax: COMMON-LISP;  Base: 10 -*-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Author      :Andrea Stocco (Modified by Cher Yang)
+;;; Author      :Andrea Stocco 
+;;; Author      :Cher Yang
 ;;; 
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-model.lisp
-;;; Version     :v2.0
+;;; Filename    :simon-motivation-model1.lisp
+;;; Version     :v3.1
 ;;; 
-;;; Description :This declarative model simulates gambling task in HCP dataset.
+;;; Description :This declarative model simulates simon task based on Boksem (2006)'s 
+;;;              paradigm. This model takes motivation parameter as mental clock: 
+;;;              if the time used longer than model's motivation parameter (in sec unit), 
+;;;              it would give up checking; the the time used withine the limit, the 
+;;;              model would continue retrieving.
 ;;; 
-;;; Bugs        : 2/18 After 5 times run, the model will give nan responses
+;;; Bugs        : DONE 2/17 After 5 times run, the model will give nan responses
+;;;                    2/18 Change check-detect-problem(): rather than retrieve
+;;;                         once, but try to retrieve as many times until successfully
+;;;                         retrieve the rule consistent with the shape on screen. 
+;;;                         This gaurentee 100% correct answers for both conditions, 
+;;;                         so should add a boundary to limit how many retrieval attampts.
+;;;                    2/23 set goal buffer in simon_device.py rather than in simon-model3.lisp
+;;;                         
 ;;;
-;;;
-;;; To do       : 2/18: fix bugs because of retrival failure; add goal
-;;; 222.114   PROCEDURAL             PRODUCTION-FIRED RETRIEVE-INTENDED-RESPONSE
-;;; 222.114   PROCEDURAL             CLEAR-BUFFER RETRIEVAL
-;;; 222.114   DECLARATIVE            start-retrieval
-;;; 222.114   PROCEDURAL             CONFLICT-RESOLUTION
-;;; 223.114   DECLARATIVE            RETRIEVAL-FAILURE
-;;; 223.114   PROCEDURAL             CONFLICT-RESOLUTION
-;;; 223.114   ------                 Stopped because no events left to process
+;;; To do       : DONE 2/17: fix bugs because of retrival failure; add goal
+;;;               DONE 2/18: DONE 1) Change whether the cue is consistent with stimulus, we
+;;;                          might control for task difficulty.
+;;;                          2) Add a control mechanism - whether keep retrieving:
+;;;                          DONE - qualitative motivation: =1 no check; =2 check once; =3
+;;;                                 check 2 times... 
+;;;                          - quantative control: no check vs. go check unlimited time
+;;;                          DONE 3) Add a reward delivery mechanism - when check-failed
+;;;                                  deliver negative rewards, when check passed, positive.
+;;;                          DONE 4) Use Boksem's paradigm, add cue
+;;;                    2/23 1) Following Mareka's mind-windering model? When task-relevant goal
+;;;                          is retrieved
+;;;                         DONE 2) Goal buffer delivers reward
+;;;                         DONE 3) GOAL buffer check-time, rather than how many times one retrieves
+;;;                    2/25 1) Encode feedback - post-error-slow? After negative feedback, adjust 
+;;;                         motivation parameter - longer duration for checking, or more times of 
+;;;                         checking
+;;;                    3/03 Add temporal buffer to inccorporate reward and time
 ;;; 
 ;;; ----- History -----
 ;;;
@@ -90,6 +111,13 @@
       color 
       location)
 
+;;; Bokesem (2006)
+(chunk-type (simon-cue (:include visual-object))
+      kind 
+      shape 
+      color 
+      cue)
+
 (chunk-type (simon-screen (:include visual-object))
       kind 
       value)
@@ -97,7 +125,8 @@
 (chunk-type (simon-stimulus-location (:include visual-location))
       shape 
       color 
-      location)
+      location
+      cue)
 
 (chunk-type simon-rule 
   kind 
@@ -112,13 +141,18 @@
   location)
 
 
-(chunk-type wm       ;; Working Memory. Simple imaginal chunk with 2 slots
+(chunk-type wm       ;; Working Memory. Simple imaginal chunk with 3 slots
       state
       value1
-      value2
+      value2 
+      value3         ;;; Bokesem (2006) CUE
       checked)
 
- (chunk-type phase step)
+(chunk-type phase
+      step
+      motivation        ;;; mental counts
+      time-onset        ;;; mental clock
+      time-duration)    ;;; mental clock 
 
 
 ;;; --------- DM ---------
@@ -128,6 +162,7 @@
   (stimulus isa chunk)
   (circle isa chunk)
   (square isa chunk)
+  (arrow isa chunk)
   (shape isa chunk)
   (yes isa chunk)
   (no isa chunk)
@@ -137,7 +172,10 @@
   (done isa chunk)
   (pause isa chunk)
   (screen isa chunk)
-  (on-task isa chunk)
+  (attend-fixation isa chunk)
+  (attend-cue isa chunk)
+  (attend-stimulus isa chunk)
+  (retrieve-rule isa chunk)
 
 ;;; --------- The Simon Task rules ---------
   (circle-left isa simon-rule
@@ -154,6 +192,8 @@
           shape square
           dimension shape)
 
+;;; --------- GOAL ---------
+
 )
 
 
@@ -161,25 +201,6 @@
 ;;; ------------------------------------------------------------------
 ;;; INITIALIZATION
 ;;; ------------------------------------------------------------------
-    
-(p find-screen
-   "Look at the screen (if you were not already looking at it)"
-    =visual-location>
-    ?visual>
-     state     free
-    ?goal>
-     state    free
-==>
-    +visual>               
-      cmd      move-attention
-      screen-pos =visual-location
-
-    +goal>
-     isa        phase
-     step       on-task
-
-)
-
 
 (p prepare-wm
    "If there are no contents in WM, prepare contents"
@@ -193,17 +214,90 @@
      execution free
 
    ?goal>
+     ;buffer   empty
      state    free
+   
+   =goal>
+     isa      phase
+     step     attend-fixation
+     motivation =MOT
+     time-onset =TIME
 ==>
-   +goal>
-     isa        phase
-     step       on-task
-
+   ;+goal>
+   ;  isa        phase
+   ;  step       attend-fixation
+   ;  motivation 10 ;;; 1 (low) 2(medium) 3(high) 4(very high)
    +imaginal>
      isa wm
      state process
      checked no
+
+   !output! (in prepare-wm motivation value is =MOT time-onset is =TIME)
 )
+
+(p find-screen
+   "Look at the screen (if you were not already looking at it)"
+    =visual-location>
+    ?visual>
+     state      free
+    ?goal>
+     state      free
+==>
+    +visual>
+      cmd      move-attention
+      screen-pos =visual-location
+
+   !eval! (trigger-reward 0) ; CLEAR REWARD TRACE
+)
+
+(p process-fixation
+    ?visual>
+      state    free
+    =visual>
+      text     T
+      value    "+"
+    ?imaginal>
+      state    free
+    =goal>
+     isa        phase
+     step       attend-fixation
+     motivation   =VAL
+==>
+    *goal>
+      step       attend-cue
+    ;!output! (in process-fixation() the motivation value is =VAL)
+)
+
+;;; ----------------------------------------------------------------
+;;; ATTEND CUE
+;;; ----------------------------------------------------------------
+;;; This production process cues and encode in WM
+;;; ----------------------------------------------------------------
+(p process-cue
+   "Encodes the cue in WM"
+   ?visual>
+      state    free
+   ?imaginal>
+      state    free
+   =visual>
+     kind simon-cue
+     cue =CUE
+   =imaginal>
+     state process
+     checked no
+     value3 nil
+   =goal>
+     isa        phase
+     step       attend-cue
+     motivation =VAL
+==>
+   *goal>
+     step       attend-stimulus
+   =imaginal>
+     value3 =CUE
+   ;!output! (in process-cue() the motivation value is =VAL)
+)
+
 
 ;;; ----------------------------------------------------------------
 ;;; SELECTIVE ATTENTION
@@ -228,7 +322,7 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       attend-stimulus
 ==>
    =goal>
    =visual>
@@ -252,7 +346,7 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       attend-stimulus
 ==>
    =goal>
    =visual>
@@ -278,7 +372,7 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       attend-stimulus
 ==>
    =goal>
    =visual>
@@ -302,7 +396,7 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       attend-stimulus
 ==>
    =goal>
    =visual>     
@@ -327,7 +421,7 @@
    =imaginal>
      state process
    - value1 nil
-   - value2 nil  
+   - value2 nil
    
    ?retrieval>
      state free
@@ -335,26 +429,67 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       attend-stimulus
+     motivation   =MOT
+     time-onset   =TIME
 ==>
-   =goal>
    =visual>   ; Keep visual
    =imaginal> ; Keep WM
-   
    +retrieval>
      kind simon-rule
      has-motor-response yes
+   !bind! =NEW-MOT (- =MOT 1)
+   *goal>
+     step       retrieve-rule
+     motivation   =NEW-MOT
+   !output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
 )
 
 
 ;;; ------------------------------------------------------------------
 ;;; RESPONSE VERIFICATION AND PERFORMANCE MONITORING
 ;;; ------------------------------------------------------------------
-;;; After selecting a response, the model has one chance to check and
-;;; correct any eventual mistake. The "one ch
+;;; After selecting a response, the model has ONE-UNLIMITED chance to check
+;;; and correct any eventual mistake. The motivation chunk determines how
+;;; much effort this model decides to invest: redo retrieval once or redo
+;;; until correct rule when check-detect-problem fires. 
+;;; When check-pass fires, a positive reward will be given; while when
+;;; check-detect-problem fires or retrieval failure, a negative reward 
+;;; will be given. 
 
+(p dont-check
+   =visual>
+     - shape nil
+
+   =retrieval>
+     kind  simon-rule
+     - shape nil
+
+   =imaginal>
+     state process
+     checked no
+
+   ?imaginal>
+     state free
+
+   =goal>
+     isa        phase
+     step       retrieve-rule
+     <= motivation   0  ;;; count number of attempts, if <=0 do not check
+     motivation   =MOT
+==>
+   *goal>
+     step       check-rule
+   =visual>
+   =retrieval>
+   =imaginal>
+     checked yes
+   
+   !output! (in dont-check() motivation is =MOT)
+)
 ;;; Check
 ;;; Last time to catch yourself making a mistake
+
 (p check-pass
    "Makes sure the response is compatible with the rules"
    =visual>
@@ -373,18 +508,22 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       retrieve-rule
+     motivation   =MOT
+     > motivation   0 ;;; compete with dont-check, higher utility fires
 ==>
-   =goal>
+   *goal>
+     step       check-rule
    =visual>
    =retrieval>
    =imaginal>
      ;value2 nil
      checked yes
- )
+   !output! (in check-pass() motivation is =MOT)
+)
 
-(p check-detect-problem
-   "If there is a problem, redo the retrieval once"
+(p check-detect-problem-unlimited
+   "If there is a problem, redo until retrieving the rule with correct shape"
    =visual>
      shape =SHAPE
    
@@ -401,16 +540,22 @@
 
    =goal>
      isa        phase
-     step       on-task
-==>
-   =goal>
+     step       retrieve-rule
+     motivation   =VAL
+     > motivation   0 ; when motivation>0: go checking, motivation<=0, dont-check fires
+==> 
+   *goal>
+     step       attend-stimulus
    =visual>
    -retrieval>
    =imaginal>
-     value1 nil
-     ;value2 nil
-     checked yes
+     value1 nil     ;;; Bokesem (2006)
+     value2 nil
+     ;checked yes
+
+   ;;;!output! (in check-detect-problem-unlimited() the motivation is =VAL)
  )
+
 
 (p retrieve-failure
     ?imaginal>
@@ -429,7 +574,7 @@
 
      =goal>
       isa        phase
-      step       on-task
+      step       retrieve-rule
 ==>
     =goal>
     =visual>
@@ -462,7 +607,7 @@
 
    =goal>
      isa        phase
-     step       on-task
+     step       check-rule
 ==>
    =goal>
    -imaginal>
