@@ -81,10 +81,12 @@
     (sgp :seed (100 0)
          :er t
          :esc t
+         :ncnar t ;normalize chunk names after run
          :ans 0.5
          :auto-attend t
          :le 0.63
          :lf 0.1
+         :bll 0.1
          :mas 4.0
          :ul t
          :egs 0.1

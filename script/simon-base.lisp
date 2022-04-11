@@ -60,10 +60,9 @@
 ;;;                          is retrieved
 ;;;                         DONE 2) Goal buffer delivers reward
 ;;;                         DONE 3) GOAL buffer check-time, rather than how many times one retrieves
-;;;                    2/25 1) Encode feedback - post-error-slow? After negative feedback, adjust 
-;;;                         motivation parameter - longer duration for checking, or more times of 
-;;;                         checking
-;;;                    3/03 Add temporal buffer to inccorporate reward and time
+;;;                    2/25 DONE 1) Encode feedback - post-error-slow? The model will include a self-monitor
+;;;                                 process. 
+;;;                    3/03 DONE Add temporal buffer to inccorporate reward and time
 ;;; 
 ;;; ----- History -----
 ;;;
@@ -91,16 +90,30 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Productions: 
-;;; 
-;;; p find-screen ()
+;;; ===== fixation =====
 ;;; p prepare-wm ()
-;;; p process-shape()
-;;; p dont-process-shape()
-;;; p process-location ()
-;;; p dont-process-location ()
-;;; p check-pass()
-;;; p check-detect-problem ()
+;;; p find-screen ()
+;;; ===== cue =====
+;;; p process-cue()
+;;; ===== stimulus =====
+;;; |--- p process-shape()
+;;; |--- p dont-process-shape()
+;;; |--- p process-location ()
+;;; |--- p dont-process-location ()
+;;; ===== response =====
+;;; p retrieve-intended-response()
+;;; |--- p dont-check()
+;;; |--- p check-pass()
+;;; |--- p check-detect-problem ()
 ;;; p respond()
+;;; ===== feedback =====
+;;; |--- p monitor-check-passed()
+;;; |--- p monitor-check-skipped()
+;;;    |---- p ...redo process-location/shape, retrieve, check
+;;;        |---- p monitor-check-skipped-correct-response()
+;;;        |---- p monitor-check-skipped-incorrect-response()
+;;;        |---- p monitor-check-skipped-uncertain-response()
+;;; p monitor-check-done()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -176,6 +189,11 @@
   (attend-cue isa chunk)
   (attend-stimulus isa chunk)
   (retrieve-rule isa chunk)
+  
+  (skip-check isa chunk)
+  (punched isa chunk)
+  (monitor-performance isa chunk)
+  ;(start-trial isa chuck)
 
 ;;; --------- The Simon Task rules ---------
   (circle-left isa simon-rule
@@ -193,6 +211,8 @@
           dimension shape)
 
 ;;; --------- GOAL ---------
+  (start-trial isa phase
+          step attend-fixation)
 
 )
 
@@ -447,7 +467,7 @@
 
 
 ;;; ------------------------------------------------------------------
-;;; RESPONSE VERIFICATION AND PERFORMANCE MONITORING
+;;; RESPONSE VERIFICATION 
 ;;; ------------------------------------------------------------------
 ;;; After selecting a response, the model has ONE-UNLIMITED chance to check
 ;;; and correct any eventual mistake. The motivation chunk determines how
@@ -467,7 +487,8 @@
 
    =imaginal>
      state process
-     checked no
+     ; checked no
+     - checked yes
 
    ?imaginal>
      state free
@@ -483,7 +504,7 @@
    =visual>
    =retrieval>
    =imaginal>
-     checked yes
+     checked skip-check
    
    !output! (in dont-check() motivation is =MOT)
 )
@@ -501,7 +522,8 @@
 
    =imaginal>
      state process
-     checked no
+     ;checked no
+     - checked yes
    
    ?imaginal>
      state free
@@ -533,7 +555,8 @@
 
    =imaginal>
      state process
-     checked no
+     ;checked no
+     - checked yes
    
    ?imaginal>
      state free
@@ -544,7 +567,7 @@
      motivation   =VAL
      > motivation   0 ; when motivation>0: go checking, motivation<=0, dont-check fires
 ==> 
-   *goal>
+   =goal>
      step       attend-stimulus
    =visual>
    -retrieval>
@@ -572,7 +595,7 @@
      - value1 nil
      - value2 nil
 
-     =goal>
+    =goal>
       isa        phase
       step       retrieve-rule
 ==>
@@ -587,6 +610,75 @@
  
 (p respond
    "If we have a response and it has been checked, we respond"
+   ?manual>
+     preparation free
+     processor free
+     execution free
+   
+   =visual>
+     kind simon-stimulus
+     shape =SHAPE 
+        
+   =goal>
+     isa        phase
+     step       check-rule
+
+   =imaginal>
+     state process
+     ;checked yes
+     - checked no
+     punched nil
+    
+   =retrieval>
+     kind simon-rule
+     has-motor-response yes
+     hand =HAND
+
+==>
+   +manual>
+     isa punch
+     hand =HAND
+     finger index
+   =visual>
+   =goal>
+     step       monitor-performance 
+   =imaginal>
+     state process
+     punched =HAND
+   -retrieval>
+  
+)
+
+;;; ------------------------------------------------------------------
+;;; PERFORMANCE MONITORING
+;;; ------------------------------------------------------------------
+;;; After responding, the model would initiate a self-monitoring process:
+;;; checking whether pressing the right key.
+;;; Three possible outcomes: 1) CHECK-PASS fired, then the model is confident
+;;; about its response, the MONITOR-CHECK-PASSED will be fired
+;;; 2) DONT-CHECK fired, the model gave a response before retrieving the 
+;;; correct answer, thus it has to do the retrieval again and see if the 
+;;  response was correct. If just pressed key matches newly retrieved answer -
+;;; MONITOR-CHECK-SKIPPED-CORRECT-RESPONSE() fires; otherwise
+;;; MONITOR-CHECK-SKIPPED-INCORRECT-RESPONSE fires.
+;;; 3) In the case of 2), it is likely that the model failed to retrieve 
+;;; the correct answer no matter how, thus, MONITOR-CHECK-SKIPPED-UNCERTAIN-RESPONSE 
+;;; will fire
+
+
+(p monitor-check-passed
+   ?manual>
+     preparation free
+     processor free
+     execution free
+ 
+   ?retrieval>
+     state free
+     buffer empty
+ 
+   ?imaginal>
+     state free
+ 
    =visual>
      kind simon-stimulus
      shape =SHAPE 
@@ -594,30 +686,176 @@
    =imaginal>
      state process
      checked yes
+     - punched nil
+ 
+    =goal>
+     isa        phase
+     step       monitor-performance
+   
+==>
+    =visual>
+    =imaginal>
+     checked done
+    =goal>
+   
+)
 
-   =retrieval>
-     kind simon-rule
-     has-motor-response yes
-     hand =HAND
-     
+(p monitor-check-skipped
+   "After puching the keyboard, the model would initiate a self-monitor process. 
+   If checked=skip-check, it will check simon rules again until correct rule is retrieved, and encode the self-monitor feedback. 
+   If checked=yes, it will finish this trial"
+ 
    ?manual>
      preparation free
      processor free
      execution free
+ 
+   ?retrieval>
+     state free
+     buffer empty
+ 
+   ?imaginal>
+     state free
+ 
+   =visual>
+     kind simon-stimulus
+     shape =SHAPE 
 
+   =imaginal>
+     state process
+     checked skip-check
+     - punched nil
+ 
+    =goal>
+     isa        phase
+     step       monitor-performance
+ 
+==>
+    =visual>
+    =imaginal>
+    =goal>
+     isa        phase
+     step       attend-stimulus
+     motivation   10  ; since it's self-monitoring, give infinite motivation for now
+     time-onset   0
+ )
+
+(p monitor-check-skipped-correct-response      
+   "minitor not checked yet, retreive correct response and see if match"
+   ?visual>
+     buffer full
+   
+   ?retrieval>
+     buffer full
+   
    =goal>
      isa        phase
      step       check-rule
-==>
-   =goal>
-   -imaginal>
-   -retrieval>
-   -goal>
-   +manual>
-     isa punch
+   
+   =imaginal>
+     state process
+     checked yes
+     punched =HAND
+   
+   =retrieval>
+     kind  simon-rule
+     has-motor-response yes
      hand =HAND
-     finger index
-)
+       
+==>
+   =retrieval>
+   =imaginal>
+     checked done
+   =goal>
+     step       monitor-performance
+   )
+
+
+(p monitor-check-skipped-incorrect-response      
+   "minitor not checked yet, retreive correct response and see if match"
+   ?visual>
+     buffer full
+   
+   ?retrieval>
+     buffer full
+   
+   =goal>
+     isa        phase
+     step       check-rule
+   
+   =imaginal>
+     state process
+     checked yes
+     punched =HAND
+   
+   =retrieval>
+     kind  simon-rule
+     has-motor-response yes
+     - hand =HAND
+       
+==> 
+   =retrieval>
+   =imaginal>
+     checked done
+   =goal>
+     step       monitor-performance
+   )
+
+(p monitor-check-skipped-uncetrain-response      
+   "minitor not checked yet, retreive correct response and see if match"
+   ?visual>
+     buffer full
+   
+   ?retrieval>
+     buffer full
+   
+   =goal>
+     isa        phase
+     step       check-rule
+   
+   =imaginal>
+     state process
+     checked skip-check
+     - punched nil
+   
+   =retrieval>
+     kind  simon-rule
+     has-motor-response yes
+       
+==> 
+   =retrieval>
+   =imaginal>
+     checked done
+   =goal>
+     step       monitor-performance
+   )
+
+(p monitor-check-done
+ "After puching the keyboard, the model would initiate a self-monitor process. 
+ If checked=skip-check, it will check simon rules again until correct rule is retrieved, and . 
+ If checked=yes, it will finish this trial"
+   ?manual>
+     preparation free
+     processor free
+     execution free
+ 
+   ?imaginal>
+     state free
+
+   =imaginal>
+     state process
+     checked done
+     - punched nil
+   
+   =goal>
+     isa        phase
+     step       monitor-performance
+ 
+==>
+    -goal>
+    -retrieval>
+    -imaginal> 
+ )
 
 ;;; --- DONE! -------------------------------------------------------------- ;;;
 

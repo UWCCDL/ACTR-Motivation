@@ -92,16 +92,8 @@
 ;;; 
 ;;; Productions: 
 ;;; 
-;;; p find-screen ()
-;;; p prepare-wm ()
-;;; p process-shape()
-;;; p dont-process-shape()
-;;; p process-location ()
-;;; p dont-process-location ()
-;;; p check-pass()
-;;; p check-detect-problem ()
-;;; p respond()
-;;;;
+;;; p retrieve-intended-response-m3 ()
+;;; p check-pass-m3 ()
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; ----------------------------------------------------------------
@@ -177,7 +169,7 @@
 
    =imaginal>
      state process
-     checked no
+     - checked yes  
    
    ?imaginal>
      state free

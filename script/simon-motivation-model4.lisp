@@ -93,18 +93,14 @@
 ;;; 
 ;;; Productions: 
 ;;; 
-;;; p mind-wandering-start() => mind-wandering-continue() => mind-wandering-back()
-;;; p prepare-wm ()
-;;; p find-screen ()
-;;;
-;;; p process-shape()
-;;; p dont-process-shape()
-;;; p process-location ()
-;;; p dont-process-location ()
-;;;
-;;; p check-pass()
-;;; p check-detect-problem ()
-;;; p respond()
+;;; p mind-wandering-start()
+;;; p mind-wandering-continue() 
+;;; p mind-wandering-back()
+;;; 
+;;; p prepare-wm() 
+;;; ....
+;;; p retrieve-intended-response-m4 ()
+;;; p check-pass-m4 ()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
