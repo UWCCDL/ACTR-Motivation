@@ -138,7 +138,7 @@
      step       retrieve-rule
      motivation   =DIFF
 
-   !output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
+   ;!output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
    ;;;!output! (in retrieve-intended-response()  (mp-time-ms))
 )
 
@@ -171,5 +171,5 @@
    =imaginal>
      ;value2 nil
      checked yes
-   !output! (in check-pass() motivation is =MOT)
+   ;!output! (in check-pass() motivation is =MOT)
 )

@@ -137,7 +137,7 @@
      step       retrieve-rule
      motivation   =DIFF
 
-   !output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
+   ;!output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
    ;;;!output! (in retrieve-intended-response()  (mp-time-ms))
 )
 
@@ -191,6 +191,6 @@
    !bind!       =CURRTIME (mp-time)
    !bind!       =DURATION (- =CURRTIME =TIME)
    !eval! (trigger-reward =DURATION)
-   !output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
+   ;!output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
  )
 

@@ -135,7 +135,7 @@
    *goal>
      step       retrieve-rule
      motivation   =NEW-MOT
-   !output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
+   ;!output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
 )
 
 (p check-pass-m1
@@ -167,5 +167,5 @@
    =imaginal>
      ;value2 nil
      checked yes
-   !output! (in check-pass() motivation is =MOT)
+   ;!output! (in check-pass() motivation is =MOT)
 )

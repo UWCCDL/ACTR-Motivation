@@ -90,7 +90,6 @@
          :mas 4.0
          :ul t
          :egs 0.1
-         ;:reward-hook bg-reward-hook
          :alpha 0.4
          :imaginal-activation 3.0
          :motor-feature-prep-time 0.01
@@ -98,11 +97,13 @@
          :needs-mouse t
          :model-warnings nil
          ;:v t
-         :trace-detail low
+         ;:trace-detail low
          ;:ult t
          ;:act t
          :trace-filter production-firing-only
          ;:pct t
          ;:blt t
+         :reward-hook "detect-reward-hook"
+         :cycle-hook "detect-production-hook"
     )
 )

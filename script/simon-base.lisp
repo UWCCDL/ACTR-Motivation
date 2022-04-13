@@ -28,8 +28,8 @@
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
-;;; Filename    :simon-motivation-model1.lisp
-;;; Version     :v3.1
+;;; Filename    :simon-base.lisp
+;;; Version     :v3.0
 ;;; 
 ;;; Description :This declarative model simulates simon task based on Boksem (2006)'s 
 ;;;              paradigm. This model takes motivation parameter as mental clock: 
@@ -62,6 +62,7 @@
 ;;;                         DONE 3) GOAL buffer check-time, rather than how many times one retrieves
 ;;;                    2/25 DONE 1) Encode feedback - post-error-slow? The model will include a self-monitor
 ;;;                                 process. 
+;;;                    4/11 1) Deliver rewards - when deliver rewards and how much?
 ;;;                    3/03 DONE Add temporal buffer to inccorporate reward and time
 ;;; 
 ;;; ----- History -----
@@ -107,10 +108,10 @@
 ;;; |--- p check-detect-problem ()
 ;;; p respond()
 ;;; ===== feedback =====
-;;; |--- p monitor-check-passed()
+;;; |--- p monitor-check-passed() -> !eval! (trigger-reward 1)
 ;;; |--- p monitor-check-skipped()
 ;;;    |---- p ...redo process-location/shape, retrieve, check
-;;;        |---- p monitor-check-skipped-correct-response()
+;;;        |---- p monitor-check-skipped-correct-response() -> !eval! (trigger-reward 1)
 ;;;        |---- p monitor-check-skipped-incorrect-response()
 ;;;        |---- p monitor-check-skipped-uncertain-response()
 ;;; p monitor-check-done()
@@ -165,8 +166,7 @@
       step
       motivation        ;;; mental counts
       time-onset        ;;; mental clock
-      time-duration)    ;;; mental clock 
-
+      time-duration)     ;;; mental clock
 
 ;;; --------- DM ---------
 (add-dm (simon-rule isa chunk)
@@ -252,7 +252,7 @@
      state process
      checked no
 
-   !output! (in prepare-wm motivation value is =MOT time-onset is =TIME)
+   ;!output! (in prepare-wm motivation value is =MOT time-onset is =TIME)
 )
 
 (p find-screen
@@ -462,7 +462,7 @@
    *goal>
      step       retrieve-rule
      motivation   =NEW-MOT
-   !output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
+   ;!output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
 )
 
 
@@ -506,7 +506,7 @@
    =imaginal>
      checked skip-check
    
-   !output! (in dont-check() motivation is =MOT)
+   ;!output! (in dont-check() motivation is =MOT)
 )
 ;;; Check
 ;;; Last time to catch yourself making a mistake
@@ -541,7 +541,7 @@
    =imaginal>
      ;value2 nil
      checked yes
-   !output! (in check-pass() motivation is =MOT)
+   ;!output! (in check-pass() motivation is =MOT)
 )
 
 (p check-detect-problem-unlimited
@@ -697,7 +697,7 @@
     =imaginal>
      checked done
     =goal>
-   
+   !eval! (trigger-reward 1)
 )
 
 (p monitor-check-skipped
@@ -768,6 +768,7 @@
      checked done
    =goal>
      step       monitor-performance
+   !eval! (trigger-reward 1)
    )
 
 
