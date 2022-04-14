@@ -328,13 +328,5 @@
 ;     (p2 :at 0.0202 );:reward .2)
 ;     (p3 :at 0.0305 );:reward .3)
 ;     (p4 :at 0.0408 );:reward .4)
-;     (p5 :at 0.0513 );:reward .5)
-;     (p6 :at 0.0618 );:reward .6)
-;     (p7 :at 0.0725 );:reward .7)
-;     (p8 :at 0.0833);:reward .8)
-;     (p9 :at 0.0942 );:reward .9)
-;     (p10 :at 0.1052 );:reward 1)
-;     )
-    
 )
 
