@@ -769,6 +769,8 @@ class SimonTask:
             data_frames = (df_at, df_production, df_utility)
             df_merged = reduce(lambda left,right: pd.merge(left,right,on=['index', 'production'], how='outer'), data_frames)
             df = df_merged.merge(df_chunk, how="left", on="index")
+            # add motivation parameter
+            df['motivation'] = self.parameters['motivation']
             return df
         else:
             return (df_chunk, df_at, df_production, df_utility)
