@@ -63,6 +63,7 @@
 ;;;                    2/25 DONE 1) Encode feedback - post-error-slow? The model will include a self-monitor
 ;;;                                 process. 
 ;;;                    4/11 1) Deliver rewards - when deliver rewards and how much?
+;;;                    4/17 1) Connect reward and self-monitoring components. Add a new chunk slot in Goal: updated-motivation
 ;;;                    3/03 DONE Add temporal buffer to inccorporate reward and time
 ;;; 
 ;;; ----- History -----
@@ -108,12 +109,12 @@
 ;;; |--- p check-detect-problem ()
 ;;; p respond()
 ;;; ===== feedback =====
-;;; |--- p monitor-check-passed() -> !eval! (trigger-reward 1)
+;;; |--- p monitor-check-passed() -> !eval! (trigger-reward =MOT)
 ;;; |--- p monitor-check-skipped()
 ;;;    |---- p ...redo process-location/shape, retrieve, check
-;;;        |---- p monitor-check-skipped-correct-response() -> !eval! (trigger-reward 1)
-;;;        |---- p monitor-check-skipped-incorrect-response()
-;;;        |---- p monitor-check-skipped-uncertain-response()
+;;;        |---- p monitor-check-skipped-correct-response() -> !eval! (trigger-reward =MOT)
+;;;        |---- p monitor-check-skipped-incorrect-response() -> !eval! (trigger-reward 0)
+;;;        |---- p monitor-check-skipped-uncertain-response() -> !eval! (trigger-reward 0)
 ;;; p monitor-check-done()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -164,9 +165,10 @@
 
 (chunk-type phase
       step
-      motivation        ;;; mental counts
-      time-onset        ;;; mental clock
-      time-duration)     ;;; mental clock
+      motivation            ;;; mental counts
+      updated-motivation    ;;; mental counts
+      time-onset            ;;; mental clock
+      time-duration)        ;;; mental clock
 
 ;;; --------- DM ---------
 (add-dm (simon-rule isa chunk)
@@ -243,14 +245,12 @@
      motivation =MOT
      time-onset =TIME
 ==>
-   ;+goal>
-   ;  isa        phase
-   ;  step       attend-fixation
-   ;  motivation 10 ;;; 1 (low) 2(medium) 3(high) 4(very high)
    +imaginal>
      isa wm
      state process
      checked no
+   *goal>
+     updated-motivation  =MOT  ; keep track of discounted motivation
 
    ;!output! (in prepare-wm motivation value is =MOT time-onset is =TIME)
 )
@@ -281,11 +281,11 @@
     =goal>
      isa        phase
      step       attend-fixation
-     motivation   =VAL
+     updated-motivation   =MOT
 ==>
     *goal>
       step       attend-cue
-    ;!output! (in process-fixation() the motivation value is =VAL)
+    ;!output! (in process-fixation() the motivation value is =MOT)
 )
 
 ;;; ----------------------------------------------------------------
@@ -309,13 +309,13 @@
    =goal>
      isa        phase
      step       attend-cue
-     motivation =VAL
+     updated-motivation =MOT
 ==>
    *goal>
      step       attend-stimulus
    =imaginal>
      value3 =CUE
-   ;!output! (in process-cue() the motivation value is =VAL)
+   ;!output! (in process-cue() the motivation value is =MOT)
 )
 
 
@@ -450,7 +450,7 @@
    =goal>
      isa        phase
      step       attend-stimulus
-     motivation   =MOT
+     updated-motivation   =MOT
      time-onset   =TIME
 ==>
    =visual>   ; Keep visual
@@ -461,7 +461,7 @@
    !bind! =NEW-MOT (- =MOT 1)
    *goal>
      step       retrieve-rule
-     motivation   =NEW-MOT
+     updated-motivation   =NEW-MOT
    ;!output! (in retrieve-intended-response() the motivation val is =MOT discount value is 1 new motivation val is =NEW-MOT)
 )
 
@@ -496,8 +496,8 @@
    =goal>
      isa        phase
      step       retrieve-rule
-     <= motivation   0  ;;; count number of attempts, if <=0 do not check
-     motivation   =MOT
+     <= updated-motivation   0  ;;; count number of attempts, if <=0 do not check
+     updated-motivation   =MOT
 ==>
    *goal>
      step       check-rule
@@ -531,8 +531,8 @@
    =goal>
      isa        phase
      step       retrieve-rule
-     motivation   =MOT
-     > motivation   0 ;;; compete with dont-check, higher utility fires
+     updated-motivation   =MOT
+     > updated-motivation   0 ;;; compete with dont-check, higher utility fires
 ==>
    *goal>
      step       check-rule
@@ -564,8 +564,8 @@
    =goal>
      isa        phase
      step       retrieve-rule
-     motivation   =VAL
-     > motivation   0 ; when motivation>0: go checking, motivation<=0, dont-check fires
+     updated-motivation   =VAL
+     > updated-motivation   0 ; when motivation>0: go checking, motivation<=0, dont-check fires
 ==> 
    =goal>
      step       attend-stimulus
@@ -691,13 +691,14 @@
     =goal>
      isa        phase
      step       monitor-performance
+     motivation =MOT  ; original motivation
    
 ==>
     =visual>
     =imaginal>
      checked done
     =goal>
-   !eval! (trigger-reward 1)
+   !eval! (trigger-reward =MOT)
 )
 
 (p monitor-check-skipped
@@ -736,7 +737,7 @@
     =goal>
      isa        phase
      step       attend-stimulus
-     motivation   10  ; since it's self-monitoring, give infinite motivation for now
+     updated-motivation   20  ; since it's self-monitoring, give very high motivation for now
      time-onset   0
  )
 
@@ -751,6 +752,7 @@
    =goal>
      isa        phase
      step       check-rule
+     motivation =MOT  ; original motivation value
    
    =imaginal>
      state process
@@ -768,7 +770,7 @@
      checked done
    =goal>
      step       monitor-performance
-   !eval! (trigger-reward 1)
+   !eval! (trigger-reward =MOT)
    )
 
 
@@ -800,6 +802,7 @@
      checked done
    =goal>
      step       monitor-performance
+   !eval! (trigger-reward 0)
    )
 
 (p monitor-check-skipped-uncetrain-response      
@@ -829,6 +832,7 @@
      checked done
    =goal>
      step       monitor-performance
+   !eval! (trigger-reward 0)
    )
 
 (p monitor-check-done

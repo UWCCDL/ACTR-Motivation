@@ -122,7 +122,7 @@
    =goal>
      isa        phase
      step       attend-stimulus
-     motivation   =MOT
+     updated-motivation   =MOT
      time-onset   =TIME
 ==>
    =visual>   ; Keep visual
@@ -135,9 +135,9 @@
    !bind! =DIFF (- =MOT =DURATION)
    *goal>
      step       retrieve-rule
-     motivation   =DIFF
+     updated-motivation   =DIFF
 
-   ;!output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
+   !output! (in retrieve-intended-response() the motivation val is =MOT duration value is =DURATION new motivation val is =DIFF)
    ;;;!output! (in retrieve-intended-response()  (mp-time-ms))
 )
 
@@ -178,8 +178,8 @@
      isa          phase
      step         retrieve-rule
      time-onset   =TIME
-     motivation   =MOT
-     > motivation   0 ;;; compete with dont-check, higher utility fires
+     updated-motivation   =MOT
+     > updated-motivation   0 ;;; compete with dont-check, higher utility fires
 ==>
    *goal>
      step       check-rule
@@ -190,7 +190,7 @@
    
    !bind!       =CURRTIME (mp-time)
    !bind!       =DURATION (- =CURRTIME =TIME)
-   !eval! (trigger-reward =DURATION)
-   ;!output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
+   ;!eval! (trigger-reward =DURATION)
+   !output! (in check-pass time-onset is =TIME current time is =CURRTIME motivation is =MOT duration is =DURATION)
  )
 

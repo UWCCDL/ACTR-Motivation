@@ -82,7 +82,8 @@
          :er t
          :esc t
          :ncnar t ;normalize chunk names after run
-         :ans 0.5
+         :model-warnings nil
+         :ans 0.1
          :auto-attend t
          :le 0.63
          :lf 0.1
@@ -93,6 +94,7 @@
          :alpha 0.4
          :imaginal-activation 3.0
          :motor-feature-prep-time 0.01
+         :dat 0.05  ; default action time for all productions
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
@@ -105,5 +107,6 @@
          ;:blt t
          :reward-hook "detect-reward-hook"
          :cycle-hook "detect-production-hook"
+
     )
 )
