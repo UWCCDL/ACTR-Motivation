@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import json
 import time
+from datetime import datetime
 from functools import reduce
 import scipy.optimize as opt
 
@@ -273,7 +274,7 @@ class SimonTask:
     #################### SETUP PARAMETER  ####################
     def get_parameters_name(self):
         #param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time']
-        param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
+        param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'dat']
         return param_names
 
     def get_parameter(self, param_name):
@@ -317,6 +318,7 @@ class SimonTask:
             actr.hide_output()
             actr.spp(":at", self.parameters["at"])
             actr.unhide_output()
+        self.parameters["seed"] = str(self.parameters["seed"])
         #print('after', self.parameters)
 
     def get_default_parameters(self):
@@ -811,6 +813,44 @@ def run_experiment(model="simon-motivation-model3",
 
     # Returns the task as a Python object for further analysis of data
     return task
+
+def simulate(model="simon-motivation-model3", param_set=None, n=100, verbose=True, log=True):
+    data_dir = os.path.join(os.path.realpath(".."), "data")
+    time_suffix = datetime.now().strftime("%Y%m%d%H%M%S")
+    dataframes1 = []
+    dataframes2 = []
+    dataframes_params = []
+    for j in range(n):
+        if verbose: print("Epoch #%03d" % j)
+        task = run_experiment(model,
+                              visible=False,
+                              verbose=True,
+                              trace=False,
+                              param_set=param_set)
+        res1=task.df_stats_model_outputs()
+        res2=task.df_stats_trace_outputs()
+
+        # log parameter file
+        res_params = pd.Series(task.parameters)
+        res_params['file_suffix'] = time_suffix
+
+        # add run
+        res1.insert(0, "epoch", j)
+        res2.insert(0, "epoch", j)
+        dataframes1.append(res1)
+        dataframes2.append(res2)
+        dataframes_params.append(res_params)
+
+    df1 = pd.concat(dataframes1, axis=0)
+    df2 = pd.concat(dataframes2, axis=0)
+    dfp = pd.DataFrame(dataframes_params)
+    if log:
+
+        df1.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
+        df2.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
+
+        no_parameter_log = not os.path.exists(os.path.join(data_dir, "simulation_parameters.csv"))
+        dfp.to_csv(os.path.join(data_dir, "simulation_parameters.csv"), mode='a', index=False, header=no_parameter_log)
 
 
 def simulate_behavior(model, param_set=None, n=100, verbose=False):

@@ -83,14 +83,14 @@
          :esc t
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
-         :ans 0.1
+         :ans 0.2
          :auto-attend t
          :le 0.63
          :lf 0.1
          :bll 0.1
          :mas 4.0
          :ul t
-         :egs 0.1
+         :egs 0.2
          :alpha 0.4
          :imaginal-activation 3.0
          :motor-feature-prep-time 0.01
