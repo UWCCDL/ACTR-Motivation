@@ -309,7 +309,7 @@ class SimonTask:
                     pass
                 elif key == "at":
                     actr.hide_output()
-                    actr.spp(":at", value)
+                    actr.spp(["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"], ":at", value)
                     actr.unhide_output()
                 else:
                     actr.set_parameter_value(':' + key, value)
@@ -405,7 +405,7 @@ class SimonTask:
         """
         actr.add_command("stroop-set-motivation", self.set_motivation, "Set motivation parameter for the model")
         #actr.add_command("stroop-set-pcost", self.set_pcost, "Set production cost parameter for the model")
-        actr.add_command("stroop-update-cost", self.update_cost, "Update cost :at for the model")
+        #actr.add_command("stroop-update-cost", self.update_cost, "Update cost :at for the model")
         actr.add_command("stroop-update-fixation", self.fixation, "Update window: fixation")
         actr.add_command("stroop-update-cue", self.cue, "Update window: cue")
         
@@ -427,7 +427,7 @@ class SimonTask:
         """
         actr.remove_command("stroop-set-motivation")
         #actr.remove_command("stroop-set-pcost")
-        actr.remove_command("stroop-update-cost")
+        #actr.remove_command("stroop-update-cost")
         actr.remove_command("stroop-update-fixation")
         actr.remove_command("stroop-update-cue")
         
@@ -517,7 +517,7 @@ class SimonTask:
                 self.phase = "fixation"
 
             # update cost
-            self.update_cost()
+            #self.update_cost()
 
             # proceed to next trial
             self.update_window()
@@ -572,7 +572,6 @@ class SimonTask:
         if fired_production in ["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"]:
             self.production_trace.append((self.index, actr.mp_time(), fired_production))
 
-
     def reward_hook(self, *params):
         """
         Detect the time when reward is delivered
@@ -607,17 +606,6 @@ class SimonTask:
         actr.unhide_output()
     '''
 
-    def cost_function(self, x, c=1.5):
-        c = np.exp(x * c) - 1
-        return np.round(c, 4)
-
-    def update_cost(self, enable=False):
-        """
-        Notice: may not work trial-by-trial
-        """
-        updated_cost = self.cost_function(x=actr.mp_time())
-        if enable:
-            actr.set_parameter_value(":dat", updated_cost)
 
 
     #################### ACTR STATS ANALYSIS ####################
@@ -816,9 +804,9 @@ def run_experiment(model="simon-motivation-model3",
     # Returns the task as a Python object for further analysis of data
     return task
 
-def simulate(model="simon-motivation-model3", param_set=None, n=100, verbose=True, log=True):
+def run_simulation(model="simon-motivation-model3", param_set=None, n=100, verbose=True, log=True, special_suffix=""):
     data_dir = os.path.join(os.path.realpath(".."), "data")
-    time_suffix = datetime.now().strftime("%Y%m%d%H%M%S")
+    time_suffix = datetime.now().strftime("%Y%m%d%H%M%S") + special_suffix
     dataframes1 = []
     dataframes2 = []
     dataframes_params = []
@@ -847,7 +835,7 @@ def simulate(model="simon-motivation-model3", param_set=None, n=100, verbose=Tru
     df2 = pd.concat(dataframes2, axis=0)
     dfp = pd.DataFrame(dataframes_params)
     if log:
-
+        print("......>>> SAVING SIMULATION DATA <<<......")
         df1.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
         df2.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
 
