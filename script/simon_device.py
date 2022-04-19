@@ -136,9 +136,13 @@ class SimonTrial:
         self.offset = 0.0
         self.response = None
         # record the utility vlaue of each productions during model running
-        self.utility_trace = []  # record ':u' values for 4 competitive productions
-        self.cost_trace = []  # record ':at' for 4 competitive productions
-        self.chunk_trace = []      # record ':activation' for 2 simon rules
+        self.utility_trace = []         # record ':u' values for 4 competitive productions
+        self.check_utility_trace = []  # record ':u' values for 2 check productions: CHECK-PASS-M3, DONT-CHECK
+        self.cost_trace = []            # record ':at' for 4 competitive productions
+        self.chunk_trace = []           # record ':activation' for 2 simon rules
+        self.num_checks = 0             # record number of checks before responding
+        self.responded = False          # track whether has reponded or not
+        self.expected_reward_check = []          # track CHECK, NO-CHECK expected reward
 
 
     ################# BEHAVIOR LOG #####################
@@ -170,6 +174,18 @@ class SimonTrial:
     @utility_trace.setter
     def utility_trace(self, trace):
         self._utility_trace = trace
+
+    @property
+    def check_utility_trace(self):
+        """
+        This property defines the actr parameter traces
+        Trace follow the dict format: self.check_utility_trace = [(production1, paramter1, value1), ...]
+        """
+        return self._check_utility_trace
+
+    @check_utility_trace.setter
+    def check_utility_trace(self, trace):
+        self._check_utility_trace = trace
 
     @property
     def cost_trace(self):
@@ -246,7 +262,7 @@ class SimonTask:
         self.reward_trace = []
 
     #################### SETUP MODEL  ####################
-    def setup_model(self, model="simon-motivation-model1",  param_set=None, reload=True, verbose=True):
+    def setup_model(self, model="simon-motivation-model3",  param_set=None, reload=True, verbose=True):
         """Sets up model"""
         curr_dir = os.path.dirname(os.path.realpath('__file__'))
 
@@ -494,6 +510,7 @@ class SimonTask:
                                                  self.extract_production_parameter('PROCESS-LOCATION', ':u'),
                                                  self.extract_production_parameter('DONT-PROCESS-SHAPE', ':u'),
                                                  self.extract_production_parameter('DONT-PROCESS-LOCATION', ':u')]
+
             # record activation
             self.current_trial.chunk_trace = [self.extract_chunk_parameter('CIRCLE-LEFT', ':Last-Retrieval-Activation'),
                                               self.extract_chunk_parameter('SQUARE-RIGHT', ':Last-Retrieval-Activation')]
@@ -503,6 +520,9 @@ class SimonTask:
                                            self.extract_production_parameter('PROCESS-LOCATION', ':at'),
                                            self.extract_production_parameter('DONT-PROCESS-SHAPE', ':at'),
                                            self.extract_production_parameter('DONT-PROCESS-LOCATION', ':at')]
+            # record check utility trace
+            self.current_trial.check_utility_trace = [self.extract_production_parameter('CHECK-PASS-M3', ':u'),
+                                                      self.extract_production_parameter('DONT-CHECK', ':u')]
 
             # record cost
 
@@ -571,6 +591,16 @@ class SimonTask:
         fired_production=params[0]
         if fired_production in ["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"]:
             self.production_trace.append((self.index, actr.mp_time(), fired_production))
+        if fired_production == "RESPOND":
+            self.current_trial.responded = True
+            #print("TEST1: production", fired_production, self.current_trial.responded)
+        #if (not self.current_trial.responded) and (fired_production == "DONT-CHECK"):
+            #self.current_trial.num_checks = 0
+        #    print("TEST2: production", self.index, fired_production, self.current_trial.num_checks)
+        if (not self.current_trial.responded) and (fired_production in ["CHECK-PASS-M3", "CHECK-DETECT-PROBLEM-UNLIMITED"]):
+            self.current_trial.num_checks += 1
+            #print("TEST3: production", self.index, fired_production, self.current_trial.num_checks)
+
 
     def reward_hook(self, *params):
         """
@@ -578,11 +608,18 @@ class SimonTask:
         If return, then will replace original reward calcualtion
         """
         production = params[0]
-        received_reward = params[1]
-        discounted_reward = params[2]
+        delivered_reward = params[1]
+        passed_time = params[2]
+        received_reward = delivered_reward-passed_time
+
         if production in ["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"]:
-            self.reward_trace.append((self.index, actr.mp_time(), production, received_reward, discounted_reward))
-            #print("TEST: ", params)
+            self.reward_trace.append((self.index, actr.mp_time(), production, delivered_reward, passed_time, received_reward))
+
+        if production in ["DONT-CHECK", "CHECK-PASS-M3"]:
+            if len(self.current_trial.expected_reward_check)==0:
+                self.current_trial.expected_reward_check = [self.index, actr.mp_time(), production, delivered_reward, passed_time, received_reward]
+            #print("++REWARD TEST", self.index, production, delivered_reward, passed_time, received_reward)
+            #print("self.current.expected_reward_check", self.current_trial.expected_reward_check)
     '''
     def cost_function_old(self, old_at, c=0.001):
         """
@@ -685,6 +722,23 @@ class SimonTask:
         df['condition_cue'] = [t.stimulus.cue_kind for t in self.log]
         df['stimulus_shape'] = [t.stimulus.shape for t in self.log]
         df['stimulus_location'] = [t.stimulus.location for t in self.log]
+
+        df['num_checks'] = [t.num_checks for t in self.log]
+        df['motivation'] = self.parameters["motivation"]
+
+        # record expected_reward_check for CHECK and NO-CHECK
+        df = pd.merge(df, pd.DataFrame([t.expected_reward_check for t in self.log],
+                               columns=['index', 'rewarded_time', 'production', 'delivered_reward', 'passed_time', 'received_reward']))
+
+        # record utility for CHECK-PASS and DONT-CHECK
+        df_check_utility = pd.DataFrame([[p[2] for p in t.check_utility_trace] for t in self.log],
+                                        columns=['CHECK-PASS-M3', 'DONT-CHECK'],
+                                        index=range(len(self.log))).reset_index().melt(id_vars='index',
+                                                                                       var_name='production',
+                                                                                       value_name=':u').sort_values(["index", "production"])
+        df_check_utility = df_check_utility.pivot(index="index", columns="production", values=":u")
+        df_check_utility.columns = [':u_CHECK-PASS', ':u_DONT-CHECK']
+        df = pd.merge(df, df_check_utility, on="index")
         
         return df
     
@@ -725,8 +779,7 @@ class SimonTask:
         """
         Process production trace data using hook function
         """
-        df = pd.DataFrame(self.reward_trace, columns=['index', 'rewarded_time', 'production', 'delivered_reward', 'passed_time'])
-        df['received_reward'] = df['delivered_reward']-df['passed_time']
+        df = pd.DataFrame(self.reward_trace, columns=['index', 'rewarded_time', 'production', 'delivered_reward', 'passed_time', 'received_reward'])
         df.sort_values(['index', 'production'], inplace=True)
         return df
     
@@ -736,32 +789,39 @@ class SimonTask:
         Return: (df_chunk, df_at, df_production, df_utility)
         """
         #df_performance = self.df_stats_model_outputs()
+
         df_utility = pd.DataFrame([[p[2] for p in t.utility_trace] for t in self.log], 
-                                  columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'], 
+                                  columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
                                   index=range(len(self.log))).reset_index().melt(id_vars='index', 
                                                                                   var_name='production', 
                                                                                   value_name=':u').sort_values(["index", "production"])
+        ''' 
         df_at = pd.DataFrame([[p[2] for p in t.cost_trace] for t in self.log],
                            columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
                            index=range(len(self.log))).reset_index().melt(id_vars='index', 
                                                                           var_name='production', 
                                                                           value_name=':at').sort_values(["index", "production"])
+        '''
+
         df_chunk = pd.DataFrame([[c[2] for c in t.chunk_trace] for t in self.log],
                            columns=['CIRCLE-LEFT', 'SQUARE-RIGHT'],
                            index=range(len(self.log))).reset_index().melt(id_vars='index', 
                                                                           var_name='rule', 
                                                                           value_name=':activation').sort_values(["index"])
         df_production = pd.merge_ordered(self.df_production_trace_outputs(), self.df_reward_trace_outputs(), how='outer', on=['index', 'production'])
-        
+
         if merge:
-            data_frames = (df_at, df_production, df_utility)
-            df_merged = reduce(lambda left,right: pd.merge(left,right,on=['index', 'production'], how='outer'), data_frames)
-            df = df_merged.merge(df_chunk, how="left", on="index")
+            data_frames = (df_production, df_utility)
+            df_merged1 = reduce(lambda left,right: pd.merge(left,right,on=['index', 'production'], how='outer'), data_frames)
+            df = df_merged1.merge(df_chunk, how="left", on="index")
+            #df = df_merged2.merge(df_check_utility, how="left", on="index")
+
             # add motivation parameter
             df['motivation'] = self.parameters['motivation']
+            df['at'] = self.parameters['at']
             return df
         else:
-            return (df_chunk, df_at, df_production, df_utility)
+            return (df_production, df_utility, df_chunk)
     
             
 
