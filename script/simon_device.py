@@ -29,7 +29,7 @@ SIMON_MAPPINGS = {"CIRCLE": "LEFT", "SQUARE": "RIGHT"}
 RESPONSE_MAPPINGS = {"LEFT": "f", "RIGHT": "j"}
 CUE_CONDITIONS = ("CONGRUENT-VALID", "CONGRUENT-INVALID", "INCONGRUENT-VALID", "INCONGRUENT-INVALID")
 
-random.seed(100)
+SEED = 100
 
 
 class SimonStimulus:
@@ -239,7 +239,7 @@ class SimonTask:
            the model attempts to retrieve until reaching correct rule
         """
         if not stimuli:
-            self.stimuli = self.generate_stimuli()
+            self.stimuli = self.generate_stimuli(param_set)
             if setup:
                 self.setup()
                 
@@ -255,7 +255,6 @@ class SimonTask:
         self.phase = "fixation"
         self.trial_trace = True
         self.current_trial = SimonTrial(self.stimuli[self.index])
-
 
         # Log when production fires and when reward is delivered
         self.production_trace = []
@@ -321,7 +320,7 @@ class SimonTask:
         if kwargs:
             update_parameters.update(kwargs)
             for key, value in kwargs.items():
-                if key == "motivation":
+                if key in ["motivation", "valid_cue_percentage", "n_trials"]:
                     pass
                 elif key == "at":
                     actr.hide_output()
@@ -339,12 +338,22 @@ class SimonTask:
 
     def get_default_parameters(self):
         defaul_parameters = self.get_parameters(*self.get_parameters_name())
-        defaul_other_parameters = {"motivation": 1, "at": 0.05}
+        defaul_other_parameters = {"motivation": 1, "at": 0.05, "valid_cue_percentage":0.5, "n_trials":20}
         defaul_parameters.update(defaul_other_parameters)
         return defaul_parameters
 
-    def generate_stimuli(self, shuffle=True, n_trials=20, valid_cue_percentage=0.5):
+    def generate_stimuli(self, param_set, shuffle=True, n_trials=20, valid_cue_percentage=0.5):
         "Generates stimuli according to the Boksem(2006)'s paradigm"
+
+        try:
+            n_trials = param_set["n_trials"]
+        except:
+            n_trials = n_trials
+        try:
+            valid_cue_percentage = param_set["valid_cue_percentage"]
+        except:
+            valid_cue_percentage = valid_cue_percentage
+
         congr_valid = [("CIRCLE", "LEFT", "LEFT"), ("SQUARE", "RIGHT", "RIGHT")]
         incongr_valid = [("CIRCLE", "RIGHT", "LEFT"), ("SQUARE", "LEFT", "RIGHT")]
         congr_invalid = [("CIRCLE", "LEFT", "RIGHT"), ("SQUARE", "RIGHT", "LEFT")]
@@ -357,6 +366,7 @@ class SimonTask:
         lst = valid + invalid
 
         if shuffle:  # Randomized if needed
+            random.seed(SEED)
             random.shuffle(lst)
 
         return [SimonStimulus(shape=x[0], location=x[1], cue=x[2]) for x in lst]
@@ -737,7 +747,7 @@ class SimonTask:
                                                                                        var_name='production',
                                                                                        value_name=':u').sort_values(["index", "production"])
         df_check_utility = df_check_utility.pivot(index="index", columns="production", values=":u")
-        df_check_utility.columns = [':u_CHECK-PASS', ':u_DONT-CHECK']
+        df_check_utility.columns = ['u_check', 'u_dont_check']
         df = pd.merge(df, df_check_utility, on="index")
         
         return df
@@ -794,7 +804,7 @@ class SimonTask:
                                   columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
                                   index=range(len(self.log))).reset_index().melt(id_vars='index', 
                                                                                   var_name='production', 
-                                                                                  value_name=':u').sort_values(["index", "production"])
+                                                                                  value_name='u').sort_values(["index", "production"])
         ''' 
         df_at = pd.DataFrame([[p[2] for p in t.cost_trace] for t in self.log],
                            columns=['PROCESS-SHAPE', 'PROCESS-LOCATION', 'DONT-PROCESS-SHAPE', 'DONT-PROCESS-LOCATION'],
@@ -807,7 +817,7 @@ class SimonTask:
                            columns=['CIRCLE-LEFT', 'SQUARE-RIGHT'],
                            index=range(len(self.log))).reset_index().melt(id_vars='index', 
                                                                           var_name='rule', 
-                                                                          value_name=':activation').sort_values(["index"])
+                                                                          value_name='activation').sort_values(["index"])
         df_production = pd.merge_ordered(self.df_production_trace_outputs(), self.df_reward_trace_outputs(), how='outer', on=['index', 'production'])
 
         if merge:
@@ -895,14 +905,21 @@ def run_simulation(model="simon-motivation-model3", param_set=None, n=100, verbo
     df2 = pd.concat(dataframes2, axis=0)
     dfp = pd.DataFrame(dataframes_params)
     if log:
-        print("......>>> SAVING SIMULATION DATA <<<......")
-        df1.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
-        df2.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
+        if log=="summary_stat":
+            print("......>>> SAVING SUMMARY STATS <<<......")
+            pass
+            #TODO: reduce simulation work. Now we set seeds so n=1 will be enough
+        else:
+            print("......>>> SAVING SIMULATION DATA <<<......")
+            df1.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
+            df2.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
 
-        no_parameter_log = not os.path.exists(os.path.join(data_dir, "simulation_parameters.csv"))
-        dfp.to_csv(os.path.join(data_dir, "simulation_parameters.csv"), mode='a', index=False, header=no_parameter_log)
+            no_parameter_log = not os.path.exists(os.path.join(data_dir, "simulation_parameters.csv"))
+            dfp.to_csv(os.path.join(data_dir, "log.csv"), mode='a', index=False, header=no_parameter_log)
+    return df1, df2, dfp
 
 
+'''
 def simulate_behavior(model, param_set=None, n=100, verbose=False):
     """Simulates N runs of the model"""
     accuracy_res = np.zeros((n, len(CUE_CONDITIONS)))
@@ -991,7 +1008,7 @@ def chery_model_error(model="simon", param_set={"ans": 0.1, "mas": 0.5}):
 
 
 #################### LOAD MODEL CORE ####################
-'''
+
 def load_model(model="simon-motivation-model3", param_set=None, verbose=True):
     """
     Load simon-core.lisp + simon-base.lisp + simon-motivation-modelx.lisp,and print current parameter sets
