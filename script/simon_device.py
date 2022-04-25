@@ -138,7 +138,7 @@ class SimonTrial:
         # record the utility vlaue of each productions during model running
         self.utility_trace = []         # record ':u' values for 4 competitive productions
         self.check_utility_trace = []  # record ':u' values for 2 check productions: CHECK-PASS-M3, DONT-CHECK
-        self.cost_trace = []            # record ':at' for 4 competitive productions
+        self.cost = 0.0                # record ':at' for any production
         self.chunk_trace = []           # record ':activation' for 2 simon rules
         self.num_checks = 0             # record number of checks before responding
         self.responded = False          # track whether has reponded or not
@@ -188,16 +188,16 @@ class SimonTrial:
         self._check_utility_trace = trace
 
     @property
-    def cost_trace(self):
+    def cost(self):
         """
         This property defines the actr production :at parameter traces
-        Trace follow the dict format: self.cost_trace = [(production1, paramter1, value1), ...]
+        Trace follow the dict format: self.cost = 0.05
         """
-        return self._cost_trace
+        return self._cost
 
-    @cost_trace.setter
-    def cost_trace(self, trace):
-        self._cost_trace = trace
+    @cost.setter
+    def cost(self, value):
+        self._cost = value
 
     @property
     def chunk_trace(self):
@@ -268,8 +268,15 @@ class SimonTask:
         # add commands
         self.add_actr_commands()
 
+
         # load model-core.lisp
         if reload:
+            # schedule event of detect production/reward before loading model
+            # note: if not load, no need to shceulde it again
+            actr.schedule_event_now("detect-production-hook")
+            actr.schedule_event_now("detect-reward-hook")
+
+            # load model
             actr.load_act_r_model(os.path.join(curr_dir, "simon-core.lisp"))
             actr.load_act_r_model(os.path.join(curr_dir, "simon-base.lisp"))
             actr.load_act_r_model(os.path.join(curr_dir, model + ".lisp"))
@@ -289,7 +296,7 @@ class SimonTask:
     #################### SETUP PARAMETER  ####################
     def get_parameters_name(self):
         #param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'motor-feature-prep-time']
-        param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation', 'dat']
+        param_names = ['seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
         return param_names
 
     def get_parameter(self, param_name):
@@ -316,29 +323,36 @@ class SimonTask:
         """
         #print("start assign set_parameters", kwargs)
         #print('before', self.parameters)
+        actr.hide_output()
         update_parameters = self.parameters.copy()
+        # if new para given
         if kwargs:
             update_parameters.update(kwargs)
             for key, value in kwargs.items():
-                if key in ["motivation", "valid_cue_percentage", "n_trials"]:
+                if key in ["motivation", "valid_cue_percentage", "n_trials", "update_cost"]:
                     pass
-                elif key == "at":
-                    actr.hide_output()
-                    actr.spp(["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"], ":at", value)
-                    actr.unhide_output()
+                # TODO: fixed
+                elif key == "init_cost":
+                    actr.set_parameter_value(":dat", value)
+                    #actr.spp(["PROCESS-SHAPE", "PROCESS-LOCATION", "DONT-PROCESS-SHAPE", "DONT-PROCESS-LOCATION"], ":at", value)
                 else:
                     actr.set_parameter_value(':' + key, value)
             self.parameters = update_parameters
+
+        #if no new param given
         else:
-            actr.hide_output()
-            actr.spp(":at", self.parameters["at"])
-            actr.unhide_output()
+            #actr.spp(":at", self.parameters["init_cost"])
+            actr.set_parameter_value(":dat", self.parameters["init_cost"])
         self.parameters["seed"] = str(self.parameters["seed"])
+        actr.unhide_output()
         #print('after', self.parameters)
 
     def get_default_parameters(self):
+        """
+        default parameter sets
+        """
         defaul_parameters = self.get_parameters(*self.get_parameters_name())
-        defaul_other_parameters = {"motivation": 1, "at": 0.05, "valid_cue_percentage":0.5, "n_trials":20}
+        defaul_other_parameters = {"motivation": 1, "init_cost": 0.05, "update_cost":False, "valid_cue_percentage":0.5, "n_trials":20}
         defaul_parameters.update(defaul_other_parameters)
         return defaul_parameters
 
@@ -431,7 +445,7 @@ class SimonTask:
         """
         actr.add_command("stroop-set-motivation", self.set_motivation, "Set motivation parameter for the model")
         #actr.add_command("stroop-set-pcost", self.set_pcost, "Set production cost parameter for the model")
-        #actr.add_command("stroop-update-cost", self.update_cost, "Update cost :at for the model")
+        actr.add_command("stroop-update-cost", self.update_cost, "Update cost :dat as time goes")
         actr.add_command("stroop-update-fixation", self.fixation, "Update window: fixation")
         actr.add_command("stroop-update-cue", self.cue, "Update window: cue")
         
@@ -444,8 +458,11 @@ class SimonTask:
 
         actr.add_command("detect-production-hook",self.production_hook, "Detect if a production fires")
         actr.add_command("detect-reward-hook", self.reward_hook, "Detect if a reward is delivered")
-        actr.schedule_event_now("detect-production-hook")
-        actr.schedule_event_now("detect-reward-hook")
+
+        # Note: comment this line for appropriately reloading model,
+        # only schedule this event if reloading, dont scheudle if not reload
+        #actr.schedule_event_now("detect-production-hook")
+        #actr.schedule_event_now("detect-reward-hook")
 
     def remove_actr_commands(self):
         """
@@ -453,7 +470,7 @@ class SimonTask:
         """
         actr.remove_command("stroop-set-motivation")
         #actr.remove_command("stroop-set-pcost")
-        #actr.remove_command("stroop-update-cost")
+        actr.remove_command("stroop-update-cost")
         actr.remove_command("stroop-update-fixation")
         actr.remove_command("stroop-update-cue")
         
@@ -526,10 +543,16 @@ class SimonTask:
                                               self.extract_chunk_parameter('SQUARE-RIGHT', ':Last-Retrieval-Activation')]
 
             # record cost
+            '''
             self.current_trial.cost_trace=[self.extract_production_parameter('PROCESS-SHAPE', ':at'),
                                            self.extract_production_parameter('PROCESS-LOCATION', ':at'),
                                            self.extract_production_parameter('DONT-PROCESS-SHAPE', ':at'),
                                            self.extract_production_parameter('DONT-PROCESS-LOCATION', ':at')]
+            '''
+            actr.hide_output()
+            self.current_trial.cost = actr.spp(":at")[0][0]
+            actr.unhide_output()
+
             # record check utility trace
             self.current_trial.check_utility_trace = [self.extract_production_parameter('CHECK-PASS-M3', ':u'),
                                                       self.extract_production_parameter('DONT-CHECK', ':u')]
@@ -547,7 +570,7 @@ class SimonTask:
                 self.phase = "fixation"
 
             # update cost
-            #self.update_cost()
+            self.update_cost()
 
             # proceed to next trial
             self.update_window()
@@ -633,11 +656,10 @@ class SimonTask:
     '''
     def cost_function_old(self, old_at, c=0.001):
         """
-        Define the function of cost increases as time
+        Define the function of cost (:dat) increases as time
         """
         return np.round(old_at + np.square(actr.mp_time() * c), 2)
         #return np.round(old_at + actr.mp_time() * c, 2)
-
     def update_cost_old(self, enable=False, threshold=0.5):
         """
         Update the cost for production by updating :at
@@ -652,6 +674,36 @@ class SimonTask:
                 actr.spp(":at", new_at)
         actr.unhide_output()
     '''
+    def cost_function(self, a=3*1e-3, b=0.05):
+        """
+        Exponential function of cost increase as time x = (0-500) y = (0-0.5)
+        b * exp(a*x) -b
+
+        a -> control slop
+        b -> control y shift
+        """
+        return np.round((b * np.exp(a * actr.mp_time())), 2)
+
+    # def cost_function_derivitive(self, a=0.005, b=0.05):
+    #     return np.round((b * b * np.exp(a * actr.mp_time())), 2)
+
+    def update_cost(self):
+        """
+        Update :dat for all productions as time increases
+        """
+        actr.hide_output()
+        curr_cost = actr.spp(":at")[0][0]
+        if self.parameters["update_cost"]: # Turn on update cost
+            new_cost = self.cost_function(b = self.parameters["init_cost"])
+            if new_cost > curr_cost:
+                #actr.set_parameter_value(":dat", new_cost)
+                actr.spp(":at", new_cost)
+                #print("index", self.index, "time", actr.mp_time(), "curr_cost:", curr_cost, "new_cost:", new_cost)
+            #print("YES! INCREASE COST: curr", curr_cost, new_cost)
+        else:
+            #print("DONT INCREASE COST: curr", curr_cost)
+            pass
+        actr.hide_output()
 
 
 
@@ -734,7 +786,10 @@ class SimonTask:
         df['stimulus_location'] = [t.stimulus.location for t in self.log]
 
         df['num_checks'] = [t.num_checks for t in self.log]
+
+        # parameter
         df['motivation'] = self.parameters["motivation"]
+        df['cost'] = [t.cost for t in self.log]
 
         # record expected_reward_check for CHECK and NO-CHECK
         df = pd.merge(df, pd.DataFrame([t.expected_reward_check for t in self.log],
@@ -828,7 +883,6 @@ class SimonTask:
 
             # add motivation parameter
             df['motivation'] = self.parameters['motivation']
-            df['at'] = self.parameters['at']
             return df
         else:
             return (df_production, df_utility, df_chunk)
@@ -874,36 +928,64 @@ def run_experiment(model="simon-motivation-model3",
     # Returns the task as a Python object for further analysis of data
     return task
 
-def run_simulation(model="simon-motivation-model3", param_set=None, n=100, verbose=True, log=True, special_suffix=""):
+def run_simulation(model="simon-motivation-model3", param_set=None, n_simulation=100, n_session=1, verbose=True, log=True, special_suffix=""):
+    """
+    Run simulation for different parameters
+
+    """
+
     data_dir = os.path.join(os.path.realpath(".."), "data")
     time_suffix = datetime.now().strftime("%Y%m%d%H%M%S") + special_suffix
-    dataframes1 = []
-    dataframes2 = []
+    dfs_model = []
+    dfs_trace = []
     dataframes_params = []
-    for j in range(n):
+
+    # number of simulation per parameter sets
+    for j in range(n_simulation):
         if verbose: print("Epoch #%03d" % j)
-        task = run_experiment(model,
-                              visible=False,
-                              verbose=True,
-                              trace=False,
-                              param_set=param_set)
-        res1=task.df_stats_model_outputs()
-        res2=task.df_stats_trace_outputs()
 
-        # log parameter file
-        res_params = pd.Series(task.parameters)
-        res_params['file_suffix'] = time_suffix
+        # number of sessions per experiment
+        dffs_model = []
+        dffs_trace = []
+        for i in range(n_session):
+            if verbose: print("\tSession #%03d" % i)
+            session = run_experiment(model,
+                                     reload=(not i),
+                                     visible=False,
+                                     verbose=True,
+                                     trace=False,
+                                     param_set=param_set)
+            session_model=session.df_stats_model_outputs()
+            session_trace=session.df_stats_trace_outputs()
 
-        # add run
-        res1.insert(0, "epoch", j)
-        res2.insert(0, "epoch", j)
-        dataframes1.append(res1)
-        dataframes2.append(res2)
-        dataframes_params.append(res_params)
+            # log parameter file
+            session_params = pd.Series(session.parameters)
+            session_params['file_suffix'] = str(time_suffix)
+            session_params['session'] = i+1
 
-    df1 = pd.concat(dataframes1, axis=0)
-    df2 = pd.concat(dataframes2, axis=0)
-    dfp = pd.DataFrame(dataframes_params)
+            # log session index
+            session_model.insert(0, "session", i+1)
+            session_trace.insert(0, "session", i+1)
+
+            dffs_model.append(session_model)
+            dffs_trace.append(session_trace)
+            dataframes_params.append(session_params)
+
+        simulation_model = pd.concat(dffs_model, axis=0)
+        simulation_trace = pd.concat(dffs_trace, axis=0)
+
+        # log simulation index
+        simulation_model.insert(0, "epoch", j+1)
+        simulation_trace.insert(0, "epoch", j+1)
+
+        # append all sessions
+        dfs_model.append(simulation_model)
+        dfs_trace.append(simulation_trace)
+
+
+    df_model = pd.concat(dfs_model, axis=0)
+    df_trace = pd.concat(dfs_trace, axis=0)
+    df_param = pd.DataFrame(dataframes_params)
     if log:
         if log=="summary_stat":
             print("......>>> SAVING SUMMARY STATS <<<......")
@@ -911,12 +993,14 @@ def run_simulation(model="simon-motivation-model3", param_set=None, n=100, verbo
             #TODO: reduce simulation work. Now we set seeds so n=1 will be enough
         else:
             print("......>>> SAVING SIMULATION DATA <<<......")
-            df1.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
-            df2.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
+            df_model["file_suffix"] = str(time_suffix)
+            df_trace["file_suffix"] = str(time_suffix)
+            df_model.to_csv(os.path.join(data_dir, "model_output_{}.csv".format(time_suffix)), index=False)
+            df_trace.to_csv(os.path.join(data_dir, "trace_output_{}.csv".format(time_suffix)), index=False)
 
-            no_parameter_log = not os.path.exists(os.path.join(data_dir, "simulation_parameters.csv"))
-            dfp.to_csv(os.path.join(data_dir, "log.csv"), mode='a', index=False, header=no_parameter_log)
-    return df1, df2, dfp
+            no_parameter_log = not os.path.exists(os.path.join(data_dir, "log.csv"))
+            df_param.to_csv(os.path.join(data_dir, "log.csv"), mode='a', index=False, header=no_parameter_log)
+    return df_model, df_trace, df_param
 
 
 '''

@@ -94,7 +94,7 @@
          :alpha 0.4
          :imaginal-activation 3.0
          :motor-feature-prep-time 0.01
-         :dat 0.05  ; default action time for all productions
+         :dat 0.02  ; default action time for all productions
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
