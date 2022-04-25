@@ -674,7 +674,7 @@ class SimonTask:
                 actr.spp(":at", new_at)
         actr.unhide_output()
     '''
-    def cost_function(self, a=3*1e-3, b=0.05):
+    def cost_function(self, a=3*1e-3, b=0.05, thresh = 0.2):
         """
         Exponential function of cost increase as time x = (0-500) y = (0-0.5)
         b * exp(a*x) -b
@@ -682,7 +682,10 @@ class SimonTask:
         a -> control slop
         b -> control y shift
         """
-        return np.round((b * np.exp(a * actr.mp_time())), 2)
+        cost = np.round((b * np.exp(a * actr.mp_time())), 2)
+        if cost > thresh:
+            cost = thresh
+        return cost
 
     # def cost_function_derivitive(self, a=0.005, b=0.05):
     #     return np.round((b * b * np.exp(a * actr.mp_time())), 2)
