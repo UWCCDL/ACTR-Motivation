@@ -83,18 +83,18 @@
          :esc t
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
-         :ans 0.2
+         :ans 0.5
          :auto-attend t
          :le 0.63
-         :lf 0.1
+         ;:lf 0.1
          :bll 0.1
          :mas 4.0
          :ul t
-         :egs 0.2
+         :egs 0.1
          :alpha 0.4
          :imaginal-activation 3.0
          :motor-feature-prep-time 0.01
-         :dat 0.02  ; default action time for all productions
+         :dat 0.05  ; default action time for all productions
          :show-focus t 
          :needs-mouse t
          :model-warnings nil
