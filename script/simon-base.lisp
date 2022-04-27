@@ -737,7 +737,7 @@
     =goal>
      isa        phase
      step       attend-stimulus
-     updated-motivation   20  ; since it's self-monitoring, give very high motivation for now
+     updated-motivation   5  ; since it's self-monitoring, give very high motivation for now
      time-onset   0
  )
 
