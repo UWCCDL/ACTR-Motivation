@@ -135,12 +135,17 @@ class SimonTrial:
         self.onset = 0.0
         self.offset = 0.0
         self.response = None
+
         # record the utility vlaue of each productions during model running
         self.utility_trace = []         # record ':u' values for 4 competitive productions
         self.check_utility_trace = []  # record ':u' values for 2 check productions: CHECK-PASS-M3, DONT-CHECK
         self.cost = 0.0                # record ':at' for any production
         self.chunk_trace = []           # record ':activation' for 2 simon rules
-        self.num_checks = 0             # record number of checks before responding
+
+        # record control intensity
+        self.check_count = 0             # record number of checks before responding
+        self.check_onset = 0.0          # record onset of checking
+        self.check_offset = 0.0         # record offset of checking
         self.responded = False          # track whether has reponded or not
         self.expected_reward_check = []          # track CHECK, NO-CHECK expected reward
 
@@ -210,6 +215,14 @@ class SimonTrial:
     @chunk_trace.setter
     def chunk_trace(self, trace):
         self._chunk_trace = trace
+
+    @property
+    def check_time(self):
+        """duration from CHECK-DETECT-PROBLEM-UNLIMITED to RESPOND"""
+        if self.check_onset==0.0:
+            return 0.0
+        return self.check_offset - self.check_onset
+
 '''
 def generate_stimuli(shuffle=True, n_trials=2, valid_cue_percentage=0.5):
     "Generates stimuli according to the Boksem(2006)'s paradigm"
@@ -626,13 +639,20 @@ class SimonTask:
             self.production_trace.append((self.index, actr.mp_time(), fired_production))
         if fired_production == "RESPOND":
             self.current_trial.responded = True
-            #print("TEST1: production", fired_production, self.current_trial.responded)
-        #if (not self.current_trial.responded) and (fired_production == "DONT-CHECK"):
-            #self.current_trial.num_checks = 0
-        #    print("TEST2: production", self.index, fired_production, self.current_trial.num_checks)
+
+        if ((not self.current_trial.responded) and (self.current_trial.check_count == 0) and fired_production=="CHECK-DETECT-PROBLEM-UNLIMITED"):
+            self.current_trial.check_onset = actr.mp_time()
+            #print("TEST check_onset", "P: ", fired_production, "check_onset:", self.current_trial.check_onset)
+
+        # number of check is discrete variable representing control intensity
         if (not self.current_trial.responded) and (fired_production in ["CHECK-PASS-M3", "CHECK-DETECT-PROBLEM-UNLIMITED"]):
-            self.current_trial.num_checks += 1
-            #print("TEST3: production", self.index, fired_production, self.current_trial.num_checks)
+            self.current_trial.check_count += 1
+            #print("TEST: index:", self.index, "P: ", fired_production, "check_count:", self.current_trial.check_count)
+
+        # time of check is continuous variable representing control intensity
+        if ((not self.current_trial.responded) and (self.current_trial.check_count > 0) and fired_production in ["CHECK-PASS-M3", "DONT-CHECK"]):
+            self.current_trial.check_offset = actr.mp_time()
+            #print("TEST check_offset", "P: ", fired_production, "check_offset:", self.current_trial.check_offset, "check time", self.current_trial.check_time)
 
 
     def reward_hook(self, *params):
@@ -788,7 +808,8 @@ class SimonTask:
         df['stimulus_shape'] = [t.stimulus.shape for t in self.log]
         df['stimulus_location'] = [t.stimulus.location for t in self.log]
 
-        df['num_checks'] = [t.num_checks for t in self.log]
+        df['check_count'] = [t.check_count for t in self.log]
+        df['check_time'] = [t.check_time for t in self.log]
 
         # parameter
         df['motivation'] = self.parameters["motivation"]
@@ -931,7 +952,7 @@ def run_experiment(model="simon-motivation-model3",
     # Returns the task as a Python object for further analysis of data
     return task
 
-def run_simulation(model="simon-motivation-model3", param_set=None, n_simulation=100, n_session=1, verbose=True, log=True, special_suffix=""):
+def run_simulation(model="simon-motivation-model3", param_set=None, n_simulation=1, n_session=1, verbose=True, log=True, special_suffix=""):
     """
     Run simulation for different parameters
 
