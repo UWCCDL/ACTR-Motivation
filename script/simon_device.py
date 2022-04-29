@@ -694,8 +694,10 @@ class SimonTask:
                 actr.spp(":at", new_at)
         actr.unhide_output()
     '''
-    def cost_function(self, a=3*1e-3, b=0.05, thresh = 0.2):
+    def cost_function1(self, a=3*1e-3, b=0.05, thresh = 0.2):
         """
+        This function will change shape based on init_cost
+        When b becomes larger, the slope becomes sharper
         Exponential function of cost increase as time x = (0-500) y = (0-0.5)
         b * exp(a*x) -b
 
@@ -707,6 +709,21 @@ class SimonTask:
             cost = thresh
         return cost
 
+    def cost_function(self, init_cost, a=1e-3, b=0.05, thresh = 0.5):
+        """
+        This function will not change shape based on init_cost
+        init_cost only shifts the curve up and down
+        Exponential function of cost increase as time x = (0-500) y = (0-0.5)
+        b * exp(a*x) -b
+
+        a -> control slop
+        b -> control y shift
+        """
+        cost = np.round((b * np.exp(a * actr.mp_time()) - b + init_cost), 2)
+        if cost > thresh:
+            cost = thresh
+        return cost
+
     # def cost_function_derivitive(self, a=0.005, b=0.05):
     #     return np.round((b * b * np.exp(a * actr.mp_time())), 2)
 
@@ -714,21 +731,14 @@ class SimonTask:
         """
         Update :dat for all productions as time increases
         """
-        actr.hide_output()
-        curr_cost = actr.spp(":at")[0][0]
+
         if self.parameters["update_cost"]: # Turn on update cost
-            new_cost = self.cost_function(b = self.parameters["init_cost"])
+            actr.hide_output()
+            curr_cost = actr.spp(":at")[0][0]
+            new_cost = self.cost_function(init_cost=self.parameters["init_cost"])
             if new_cost > curr_cost:
-                #actr.set_parameter_value(":dat", new_cost)
                 actr.spp(":at", new_cost)
-                #print("index", self.index, "time", actr.mp_time(), "curr_cost:", curr_cost, "new_cost:", new_cost)
-            #print("YES! INCREASE COST: curr", curr_cost, new_cost)
-        else:
-            #print("DONT INCREASE COST: curr", curr_cost)
-            pass
-        actr.hide_output()
-
-
+            actr.hide_output()
 
     #################### ACTR STATS ANALYSIS ####################
     '''
