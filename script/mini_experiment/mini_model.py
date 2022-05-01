@@ -35,8 +35,8 @@ class MiniModel:
             actr.pdisable('retrieve-rule')
         self.setup_parameters()
     
-    def cost_function(self, x, c=1.5, enable=True):
-        c = np.exp(x*c)-1
+    def cost_function(self, x, a=1.5, enable=True):
+        c = np.exp(x*a)-1
         if enable:
             return np.round(c, 4)
         else:
@@ -185,7 +185,7 @@ def merge_simulation_data(results):
 
 def run_simulation():
     difficulty = [3,5,7]
-    payoff = [7,10,13]
+    payoff = [10, 15, 20]
     params = list(itertools.product(*[difficulty, payoff]))
 
     dfs = []
