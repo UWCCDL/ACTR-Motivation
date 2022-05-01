@@ -39,129 +39,179 @@ library(ggeffects)
 library(Metrics)
 library(colortools)
 library(magick)
+library(RColorBrewer)
 rm(list = ls())
 ```
 
+
 ```{r}
+df = read.csv("../data/mini_model_df_20220427.txt") %>% 
+  mutate(production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
 
-#df <- list.files(path=".", pattern = "^mini_model_df", full.names = T) %>% 
-#  map_df(~read_csv(.))
-
-df1 = read.csv("./mini_model_df1_20220414.txt") %>% mutate(difficulty="low", payoff="medium",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-df2 = read.csv("./mini_model_df2_20220414.txt") %>% mutate(difficulty="medium", payoff="medium",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-df3 = read.csv("./mini_model_df3_20220414.txt") %>% mutate(difficulty="high", payoff="medium",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-df4 = read.csv("./mini_model_df4_20220414.txt") %>% mutate(difficulty="medium", payoff="low",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-df5 = read.csv("./mini_model_df5_20220414.txt") %>% mutate(difficulty="medium", payoff="medium",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-df6 = read.csv("./mini_model_df6_20220414.txt") %>% mutate(difficulty="medium", payoff="high",
-                                                           production=factor(production, levels = c("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")))
-
-df = rbind(df1, df2, df3, df4, df5, df6) %>%
-  mutate(difficulty=factor(difficulty, levels = c("low", "medium", "high")), 
-         payoff=factor(payoff, levels = c("low", "medium", "high"))) 
+SAVE.PLOT <- FALSE
 ```
+
+```{r}
+df.subset1 <- df %>% filter(payoff==10) %>% mutate(difficulty = factor(difficulty))
+df.subset2 <- df %>% filter(difficulty==5) %>% mutate(payoff = factor(payoff))
+```
+
 ### Mental Allocation as a function of Task demands
 
 We change the level of difficulty (task demands) and see how reward, cost, and utility change with it
 
-```{r eval=FALSE}
-df %>%
-  mutate(difficulty=factor(difficulty, levels = c("low", "medium", "high"))) %>%
-  group_by(production, difficulty) %>%
-  summarise(n=n()) %>%
-  mutate(freq = n/sum(n)) %>%
-  ggplot(aes(x=production)) +
-  geom_bar(aes(y=freq, fill=production), color="white", stat = "identity")+
-  ylim(0,1) +
-  facet_grid(. ~ difficulty) +
-  scale_fill_viridis(discrete = TRUE, alpha = .5, option="E") +
-  theme_pander()
-  #geom_point(aes(x=production, y=at), position = position_dodge()) +
-  #geom_smooth(aes(x=production, y=at))
-  
-  #gghistogram(x="production", color="production", fill = "production", stat="count", add = "mean", ggtheme = "jco",
-  #            facet.by = "difficulty", add_density = TRUE) 
-  #scale_fill_viridis(discrete = TRUE, alpha = .5, option="E") +
-  #scale_color_viridis(discrete = TRUE, alpha = .5, option="E")
-
-```
-
-```{r eval=FALSE}
-df %>%
-  group_by(difficulty) %>%
-  
-  ggplot(aes(x=production)) +
-  geom_histogram(aes(x=production), stat = "count")
-  geom_density(aes(x=production), stat = "count")
-  #gghistogram(x="production", color="white", fill = "difficulty", stat="count", ylab = "", 
-  #            palette = "Purples", #sequential("steelblue", plot = FALSE),font.label = list(size = 15, color = "black"), 
-              #facet.by = "difficulty", 
-              short.panel.labs = FALSE, add_density = TRUE) +
-  theme_pander(base_size = 20) +
-  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank(), legend.position = "None",
-        panel.background = element_rect(fill = "transparent"), # bg of the panel
-        plot.background = element_rect(fill = "transparent", color = NA), # bg of the plot
-        panel.grid.major = element_blank(), # get rid of major grid
-        panel.grid.minor = element_blank(), # get rid of minor grid
-        legend.background = element_rect(fill = "transparent"), # get rid of legend bg
-        legend.box.background = element_rect(fill = "transparent"))
-ggsave(filename = './figures/difficulty1.png', device = 'png', bg = 'transparent', width = 15, height = 6)
-```
 
 ## EVC vs. Difficulty
 
 ```{r}
-df %>%
-  filter(payoff=="medium") %>%
+df.subset1.freq <- df.subset1 %>%
   group_by(difficulty, production) %>%
   summarise(n = n()) %>%
-  mutate(freq = n/sum(n)) %>%
-  ggline(x="production", y="freq", color = "difficulty",fill="white", short.panel.labs = FALSE, 
-         ylab = "\nProbability of selecting", #facet.by = "difficulty", 
-         title = "Expected Value of Control in ACT-R \nIncrease Difficulty",
-         add = c("mean"), palette = "Purples", stroke = 1, size = 2) +
-  scale_color_brewer(type="seq", palette = "Purples") +
-  #annotate("text", x = 4, y = 1, label = "Some text") +
-  guides(color = FALSE) +
-  ylim(0,0.8) +
-  theme_pander(base_size = 20) +
-  theme(#axis.text.y=element_blank(), 
-        axis.ticks.y=element_blank(), #legend.position = "None",
-        #strip.background = element_blank(), strip.text.x = element_blank(), # remove facet label
-        panel.background = element_rect(fill = "transparent"), # bg of the panel
-        plot.background = element_rect(fill = "transparent", color = NA), # bg of the plot
-        panel.grid.major = element_blank(), # get rid of major grid
-        panel.grid.minor = element_blank(), # get rid of minor grid
-        legend.background = element_rect(fill = "transparent"), # get rid of legend bg
-        legend.box.background = element_rect(fill = "transparent"))
-ggsave(filename = './figures/difficulty1.png', device = 'png', bg = 'transparent', width = 10, height = 6)
+  mutate(freq = n/sum(n)) 
+
+df.subset1.reduced <- df.subset1 %>%
+  group_by(difficulty, production) %>%
+  summarise(n=n(), 
+            response_time.mean = mean(response_time), response_time.sd= sd(response_time), 
+            delivered_reward.mean = mean(delivered_reward/15), delivered_reward.sd = sd(delivered_reward/15)) %>%
+  mutate(response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         delivered_reward.se = delivered_reward.sd / sqrt(n),
+         delivered_reward.lower.ci = delivered_reward.mean - qt(1 - (0.05 / 2), n - 1) * delivered_reward.se,
+         delivered_reward.upper.ci = delivered_reward.mean + qt(1 - (0.05 / 2), n - 1) * delivered_reward.se)
+  
 ```
 
 ```{r}
-df %>%
-  filter(payoff=="medium") %>%
-  ggline(x="production", y="delivered_reward", color = "difficulty", short.panel.labs = FALSE, 
-         xlab = "", ylab = "reward", #facet.by = "difficulty", 
-         add = c("mean_se", "jitter"), palette = "Greens", stroke = 1, size = 2) +
-  #ylim(0,.8) +
-  scale_y_continuous(position = "right") +
-  theme_pander(base_size = 20) +
-  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(), 
-        #axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
-        strip.background = element_blank(), strip.text.x = element_blank(), # remove facet label
-        legend.position = "None", # remove legend
-        panel.background = element_rect(fill = "transparent"), # bg of  the panel
-        plot.background = element_rect(fill = "transparent", color = NA), # bg of the plot
-        panel.grid.major = element_blank(), # get rid of major grid
-        panel.grid.minor = element_blank(), # get rid of minor grid
-        legend.background = element_rect(fill = "transparent"), # get rid of legend bg
-        legend.box.background = element_rect(fill = "transparent"))
-ggsave(filename = './figures/difficulty2.png', device = 'png', bg = 'transparent', width = 9, height = 5)
+ggplot() +
+  geom_point(data=df.subset1.freq, aes(x=production, y=freq, group=difficulty, color="EVC"), size=5, alpha=.6) +
+  geom_pointrange(data=df.subset1.reduced, size=1, alpha=.6,
+                  mapping = aes(x=production, y=delivered_reward.mean, ymin=delivered_reward.lower.ci, ymax=delivered_reward.upper.ci, color="Reward")) +
+  geom_pointrange(data=df.subset1.reduced, size=1, alpha=.3, 
+                  mapping = aes(x=production, y=response_time.mean, ymin=response_time.lower.ci, ymax=response_time.upper.ci, color="Cost")) +
+  
+  geom_line(data=df.subset1.reduced, aes(x=production, y=delivered_reward.mean, group=difficulty), 
+            color=rep(c("#A1D99B", "#74C476", "#00441B"), each=10), size=2) +
+  geom_line(data=df.subset1.reduced, aes(x=production, y=response_time.mean, group=difficulty), color="tomato2", size=2) +
+  geom_line(data=df.subset1.freq, aes(x=production, y=freq, group=difficulty), 
+            size=2, color=rep(c("#BCBDDC", "#6A51A3", "#3F007D"), each=10)) +
+  annotate("segment", x = 3, xend = 4.5, y = 0.6, yend = 0.6, colour = "forestgreen", size = 2, 
+           arrow = arrow(angle = 45)) +
+  annotate("text",x = 4,  y = 0.7, label = "Increase Difficulty", colour = "forestgreen", size = 5) +
+  ggtitle("Expected Value of Control in ACT-R \nIncrease Difficulty") +
+  scale_y_continuous(name = expression("Production probability"), 
+                     sec.axis = sec_axis(~ . *15, name = "Reward",  breaks = c(0,2,4,6,8,10))) +
+  scale_color_manual(values = c("tomato","mediumpurple4", "forestgreen")) +
+  scale_linetype_manual(values = c("dotted", "dashed", "solid")) +
+  theme_pander(base_size = 20)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/mini_evc_difficulty.png', device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+
 ```
+
+Let's look at each seperately
+
+
+```{r}
+df.subset1 %>% gghistogram(x="production", stat="count", color="white", fill="production", palette = c("white", brewer.pal(9, "Purples")), add_density = F,
+                           title = "Probability of Selecting one Production")  +
+  theme_pander(base_size = 20)
+```
+
+```{r}
+df.subset1 %>% 
+  ggline(x="production", "delivered_reward", color = "difficulty", add = "mean_se", size= 2, point.size = 4, 
+         palette = "Greens", title = "Reward curve") +
+  theme_pander(base_size =20)
+```
+
+```{r}
+df.subset1 %>% 
+  ggline(x="production", "at", color = "difficulty", add = "mean_se", size= 2, point.size = 4, 
+         palette = "Reds", title = "Cost curve") +
+  theme_pander(base_size =20)
+```
+
+
+
+### EVC and Payoff
+
+```{r}
+df.subset2.freq <- df.subset2 %>%
+  group_by(payoff, production) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) 
+
+df.subset2.reduced <- df.subset2 %>%
+  group_by(payoff, production) %>%
+  summarise(n=n(), 
+            response_time.mean = mean(response_time), response_time.sd= sd(response_time), 
+            delivered_reward.mean = mean(delivered_reward/15), delivered_reward.sd = sd(delivered_reward/15)) %>%
+  mutate(response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         delivered_reward.se = delivered_reward.sd / sqrt(n),
+         delivered_reward.lower.ci = delivered_reward.mean - qt(1 - (0.05 / 2), n - 1) * delivered_reward.se,
+         delivered_reward.upper.ci = delivered_reward.mean + qt(1 - (0.05 / 2), n - 1) * delivered_reward.se)
+  
+```
+
+```{r}
+ggplot() +
+  geom_point(data=df.subset2.freq, aes(x=production, y=freq, group=payoff, color="EVC"), size=5, alpha=.6) +
+  geom_pointrange(data=df.subset2.reduced, size=1, alpha=.6,
+                  mapping = aes(x=production, y=delivered_reward.mean, ymin=delivered_reward.lower.ci, ymax=delivered_reward.upper.ci, color="Reward")) +
+  geom_pointrange(data=df.subset2.reduced, size=1, alpha=.3, 
+                  mapping = aes(x=production, y=response_time.mean, ymin=response_time.lower.ci, ymax=response_time.upper.ci, color="Cost")) +
+  geom_line(data=df.subset2.reduced, aes(x=production, y=delivered_reward.mean, group=payoff), 
+            color=rep(c("#A1D99B", "#74C476", "#00441B"), each=10), size=2) +
+  geom_line(data=df.subset2.reduced, aes(x=production, y=response_time.mean, group=payoff), color="tomato2", size=2) +
+  geom_line(data=df.subset2.freq, aes(x=production, y=freq, group=payoff), 
+            size=2, color=rep(c("#BCBDDC", "#6A51A3", "#3F007D"), each=10)) +
+  annotate("segment", x = 5, xend = 5, y = 0.5, yend = 0.65, colour = "forestgreen", size = 2, 
+           arrow = arrow(angle = 45)) +
+  annotate("text",x = 4,  y = 0.75, label = "Increase Payoff", colour = "forestgreen", size = 5) +
+  ggtitle("Expected Value of Control in ACT-R \nIncrease Payoff") +
+  scale_y_continuous(name = expression("Production Probability"), 
+                     sec.axis = sec_axis(~ . * 15, name = "Reward", breaks = c(0,2,4,6,8,10,12,14))) +
+  scale_color_manual(values = c("tomato","mediumpurple4", "forestgreen")) +
+  scale_linetype_manual(values = c("dotted", "dashed", "solid")) +
+  theme_pander(base_size = 20)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/mini_evc_payoff.png', device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+
+```
+
+```{r}
+df.subset2 %>% gghistogram(x="production", stat="count", color="white", fill="production", palette = c("white", brewer.pal(9, "Purples")), add_density = TRUE,
+                           title = "Probability of Selecting one Production")  +
+  theme_pander(base_size = 20)
+```
+
+
+```{r}
+df.subset2 %>% 
+  ggline(x="production", "delivered_reward", color = "payoff", add = "mean_se", size= 2, point.size = 4, 
+         palette = "Greens", title = "Reward curve") +
+  theme_pander(base_size =20)
+```
+
+```{r}
+df.subset2 %>% 
+  ggline(x="production", "response_time", color = "payoff", add = "mean_se", size= 2, point.size = 4, 
+         palette = "Reds", title = "Cost curve") +
+  theme_pander(base_size =20)
+```
+
+
+--- 
+useless
+
 
 ```{r}
 df %>%
