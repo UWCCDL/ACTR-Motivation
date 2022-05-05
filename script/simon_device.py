@@ -147,6 +147,7 @@ class SimonTrial:
         self.check_onset = 0.0          # record onset of checking
         self.check_offset = 0.0         # record offset of checking
         self.responded = False          # track whether has reponded or not
+        self.detect_problem = False     # track whether has checked and detected problem or not
         self.expected_reward_check = []          # track CHECK, NO-CHECK expected reward
 
 
@@ -640,19 +641,30 @@ class SimonTask:
         if fired_production == "RESPOND":
             self.current_trial.responded = True
 
-        if ((not self.current_trial.responded) and (self.current_trial.check_count == 0) and fired_production=="CHECK-DETECT-PROBLEM-UNLIMITED"):
+        if ((not self.current_trial.responded) and (self.current_trial.check_count == 0) and (fired_production=="RETRIEVE-INTENDED-RESPONSE-M3")):
+                #and fired_production=="CHECK-DETECT-PROBLEM-UNLIMITED"):
             self.current_trial.check_onset = actr.mp_time()
-            #print("TEST check_onset", "P: ", fired_production, "check_onset:", self.current_trial.check_onset)
+            #print("TEST check_time1", "P: ", fired_production, "check_onset:", self.current_trial.check_onset)
 
         # number of check is discrete variable representing control intensity
         if (not self.current_trial.responded) and (fired_production in ["CHECK-PASS-M3", "CHECK-DETECT-PROBLEM-UNLIMITED"]):
             self.current_trial.check_count += 1
-            #print("TEST: index:", self.index, "P: ", fired_production, "check_count:", self.current_trial.check_count)
+            self.current_trial.check_offset = actr.mp_time()
+            self.current_trial.detect_problem = True
+            #print("TEST: check_count:", self.index, "P: ", fired_production, "check_count:", self.current_trial.check_count)
+            #print("TEST check_time2", "P: ", fired_production, "check_offset:", self.current_trial.check_offset,
+            #      "check time", self.current_trial.check_time)
+
+        if (not self.current_trial.responded) and (self.current_trial.check_count > 0) and (self.current_trial.detect_problem) and (fired_production == "RETRIEVE-INTENDED-RESPONSE-M3"):
+            self.current_trial.check_offset = actr.mp_time()
+            #print("TEST check_time2", "P: ", fired_production, "check_offset:", self.current_trial.check_offset,
+            #      "check time", self.current_trial.check_time)
+
 
         # time of check is continuous variable representing control intensity
-        if ((not self.current_trial.responded) and (self.current_trial.check_count > 0) and fired_production in ["CHECK-PASS-M3", "DONT-CHECK"]):
-            self.current_trial.check_offset = actr.mp_time()
-            #print("TEST check_offset", "P: ", fired_production, "check_offset:", self.current_trial.check_offset, "check time", self.current_trial.check_time)
+        #if ((not self.current_trial.responded) and (self.current_trial.check_count > 0) and fired_production in ["CHECK-PASS-M3", "DONT-CHECK"]):
+        #    self.current_trial.check_offset = actr.mp_time()
+        #    print("TEST check_time2", "P: ", fired_production, "check_offset:", self.current_trial.check_offset, "check time", self.current_trial.check_time)
 
 
     def reward_hook(self, *params):
@@ -694,20 +706,20 @@ class SimonTask:
                 actr.spp(":at", new_at)
         actr.unhide_output()
     '''
-    def cost_function1(self, a=3*1e-3, b=0.05, thresh = 0.2):
-        """
-        This function will change shape based on init_cost
-        When b becomes larger, the slope becomes sharper
-        Exponential function of cost increase as time x = (0-500) y = (0-0.5)
-        b * exp(a*x) -b
-
-        a -> control slop
-        b -> control y shift
-        """
-        cost = np.round((b * np.exp(a * actr.mp_time())), 2)
-        if cost > thresh:
-            cost = thresh
-        return cost
+    # def cost_function1(self, a=3*1e-3, b=0.05, thresh = 0.2):
+    #     """
+    #     This function will change shape based on init_cost
+    #     When b becomes larger, the slope becomes sharper
+    #     Exponential function of cost increase as time x = (0-500) y = (0-0.5)
+    #     b * exp(a*x) -b
+    #
+    #     a -> control slop
+    #     b -> control y shift
+    #     """
+    #     cost = np.round((b * np.exp(a * actr.mp_time())), 2)
+    #     if cost > thresh:
+    #         cost = thresh
+    #     return cost
 
     def cost_function(self, init_cost, a=1e-3, b=0.05, thresh = 0.5):
         """

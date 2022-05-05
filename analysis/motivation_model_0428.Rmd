@@ -1,0 +1,1204 @@
+---
+title: "Motivation Model"
+author: "Cher Yang"
+date: "4/18/2022"
+output:
+  html_document:
+    code_folding: hide
+    theme: yeti
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, error = FALSE, message = FALSE, 
+                      tidy = T, cache.path = "./motivation_model_cache/20220428/", fig.path = "./motivation_model_cache/20220424/")
+#.libPaths(c(.libPaths(), "/home/stocco/R/x86_64-pc-linux-gnu-library/3.6"))
+library(plyr)
+library(ggthemes)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(xtable)
+library(kableExtra)
+library(pracma)  # imports Mode function
+library(rstatix)
+library(tidyverse) # handy utility functions
+library(dplyr)
+library(ggpubr)
+library(ggpubr)
+library(rstatix)
+library(lme4)
+library(sjPlot)
+library(ggeffects)
+library(Metrics)
+library(ggdist)
+library(RColorBrewer)
+rm(list = ls())
+```
+
+# Model of Motivation in ACT-R
+
+This script analyzes Motivation Model simulation data 20220428 version.
+
+What's new:
+
+- `num_checks` --> `check_counts`
+- add `check_time`: a continuous varaible for control intensity
+
+Waiting for more data (UNFINISHED)
+
+## Load Simulated Data
+
+```{r cache.lazy=TRUE, cache=TRUE}
+SKIP <- TRUE
+SAVE.PLOT <- FALSE
+
+if (SKIP) {
+  #load("./motivation_model_cache/20220419.RData")
+  load("../data/20220428.RData")
+  #load("../data/fatigue_simulation_20220424.RData")
+  
+} else {
+  df_model <- list.files(path="../data", pattern = "^model_output_20220419", full.names = T) %>% 
+    map_df(~read_csv(.))
+  
+  df2 <- list.files(path="../data", pattern = "^trace_output_20220419", full.names = T) %>% 
+  map_df(~read_csv(.))
+  
+  df <- df_model %>% full_join(df2, by = c("epoch", "index"))
+  df_model.fatigue <- list.files("../data/", pattern = "model_output*", full.names = T) %>% map_df(~read_csv(.))
+}
+```
+
+## Load Boksem (2006) emprical data
+
+```{r}
+# Boksem data
+dfb.cong = data.frame(condition_stimulus=c("congruent", "incongruent"), 
+                 accuracy=1-c(0.075, 0.153),
+                 response_time=c(451,483))
+dfb.val = data.frame(condition_cue=c("valid", "invalid"), 
+                 accuracy=1-c(0.071, 0.157),
+                 response_time=c(446, 488))
+
+dfb.fatigue = data.frame(interval = rep(c(1,2,3,4,5,6,7), 3),
+                         group = c(rep(c("mean"), 7), rep(c("speed"), 7), rep(c("accuracy"), 7)), 
+                         accuracy=c(1-c(0.092, 0.104, 0.114, 0.122, 0.125, 0.129, 0.127), 1-c(0.1,0.11,0.12,0.13,0.14,0.12,0.17), 1-c(0.08,0.11,0.12,0.11,0.11,0.13,0.08)),
+                         response_time=c(c(457, 463, 460, 464, 473, 485, 463), c(440, 459, 450, 460, 447, 490, 448), c(460, 460, 455, 458, 458, 464,458)))
+                         #response_time.sd = c(121, 129, 136, 145, 156, 145, 150))
+
+dfb.posterror = data.frame(interval = c(1,2,3,4,5,6,7),
+                           response_time = c(457, 463, 460, 464, 473, 485, 463),
+                           post_correct = c(437, 443, 436, 443, 450, 460, 440), 
+                           post_error = c(463, 464, 457, 452, 453, 457, 449))
+
+
+```
+
+## Clean Data
+
+
+Merge paramter data 
+
+```{r}
+# NOTE: in this version of data, data is replaced with init_cost
+df_model.joined <- df_model %>% 
+  mutate(file_suffix = factor(gsub(".*?([0-9]+).*", "\\1", source)),
+         condition_stimulus=factor(condition_stimulus, levels = c("congruent", "incongruent")),
+         condition_cue=factor(condition_cue, levels = c("valid", "invalid"))) %>%
+  left_join(df_log %>% mutate(file_suffix = factor(file_suffix)) %>%
+              select(init_cost, update_cost, session, motivation, valid_cue_percentage, file_suffix))
+```
+
+### Parameter Space
+
+In this model, since we have too many possible parameters combination, we should first look at what parameters are manipulated. 
+
+Below is the parameters space
+
+```{r}
+df_log %>% select(motivation) %>% unique() %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(full_width = FALSE, position = "right", bootstrap_options = c("striped", "hover"))
+
+df_log %>% select(init_cost) %>% unique() %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(full_width = FALSE, position = "right", bootstrap_options = c("striped", "hover"))
+
+df_log %>% select(valid_cue_percentage) %>% unique() %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(full_width = FALSE, position = "right", bootstrap_options = c("striped", "hover"))
+
+df_log %>% select(session) %>% unique() %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(full_width = FALSE, position = "right", bootstrap_options = c("striped", "hover"))
+```
+
+
+To better compare with Boksem(2006), we subset the model simulation data using the following fixed parameters: 
+
+  : session = 1
+  : motivation = 0.5-5
+  : init_cost = 0.05  
+  : update_cost = T/F
+  : session = 1-7 (ALL)
+  : valid_cue_percentage = 0.5
+    
+```{r}
+df_model.subset0 <- df_model.joined %>%
+  filter(session==1 & 
+         motivation<=2 & 
+         init_cost == 0.05 & 
+         #update_cost==FALSE & 
+         valid_cue_percentage==0.5)
+
+```
+
+### Simon Effects
+
+On all simulations, we could see clear Simon effect on both accuracy and RT.
+
+```{r}
+# without grid seach, we could scale the response time
+SCALE_FACTOR = 1
+
+df_model.cong <-  df_model.subset0 %>% 
+  group_by(condition_stimulus) %>%
+  summarise(n = n(), 
+            accuracy.mean=mean(accuracy, na.rm = TRUE),  
+            accuracy.sd = sd(accuracy, na.rm = TRUE),
+            response_time.mean=mean(response_time, na.rm = TRUE), 
+            response_time.sd = sd(response_time, na.rm = TRUE)) %>%
+  mutate(accuracy.se = accuracy.sd / sqrt(n),
+         accuracy.lower.ci = accuracy.mean - qt(1 - (0.05 / 2), n - 1) * accuracy.se,
+         accuracy.upper.ci = accuracy.mean + qt(1 - (0.05 / 2), n - 1) * accuracy.se, 
+         response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se) 
+```
+
+
+Table shows the aggregated simulation data of Simon effect. Consistent with empirical studies, Accuracy (incongruent) < ACC (congruent), and RT(incongruent) > RT(congruent)
+
+```{r}
+df_model.cong %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+```{r}
+df_model.val <-  df_model.subset0 %>% 
+  group_by(condition_cue) %>%
+  summarise(n = n(), 
+            accuracy.mean=mean(accuracy, na.rm = TRUE),  
+            accuracy.sd = sd(accuracy, na.rm = TRUE),
+            response_time.mean=mean(response_time, na.rm = TRUE), 
+            response_time.sd = sd(response_time, na.rm = TRUE)) %>%
+  mutate(accuracy.se = accuracy.sd / sqrt(n),
+         accuracy.lower.ci = accuracy.mean - qt(1 - (0.05 / 2), n - 1) * accuracy.se,
+         accuracy.upper.ci = accuracy.mean + qt(1 - (0.05 / 2), n - 1) * accuracy.se, 
+         response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se) 
+```
+
+
+```{r}
+df_model.val %>%
+  xtable() %>%
+  kable(digits=2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+```{r}
+plot.se1 <- ggplot(df_model.cong,
+       aes(x = condition_stimulus, y = accuracy.mean, group = 1)) +
+  geom_line(aes(x=condition_stimulus, y=accuracy.mean, group=1, linetype="Model"), size=2) +
+  geom_point(aes(col = condition_stimulus, group=1), alpha = .5, size=8) +
+  geom_pointrange(aes(x=condition_stimulus, y=accuracy.mean, ymax=accuracy.upper.ci, ymin=accuracy.lower.ci)) +
+  geom_line(data=dfb.cong, aes(x=condition_stimulus, y=accuracy, group=1, linetype="Emperical"), size=2) +
+  geom_point(data=dfb.cong, aes(x=condition_stimulus, y=accuracy, color=condition_stimulus),size=8) +
+  scale_linetype_discrete(name="Data Type") +
+  guides(color=F) + 
+  labs(y="Accuracy") +
+  #ylim(0.8,1) +
+  #scale_color_brewer(palette = "Set2") +
+  ggtitle("Simon Effect (Accuacy)", subtitle = "Emperical vs. Model") +
+  theme_pander(base_size = 20) 
+
+plot.se2 <- ggplot(df_model.cong,
+       aes(x = condition_stimulus, y = response_time.mean/SCALE_FACTOR, group = 1)) +
+  geom_line(aes(x=condition_stimulus, y=response_time.mean/SCALE_FACTOR, group=1, linetype="Model"), size=2) +
+  geom_pointrange(aes(x=condition_stimulus, y=response_time.mean, ymax=response_time.upper.ci, ymin=response_time.lower.ci)) +
+  geom_point(aes(col = condition_stimulus, group=1),alpha = .5, size=8) +
+  geom_line(data=dfb.cong, aes(x=condition_stimulus, y=response_time/1000, group=1, linetype="Emperical"), size=2) +
+  geom_point(data=dfb.cong, aes(x=condition_stimulus, y=response_time/1000, color=condition_stimulus),size=8) +
+  scale_linetype_discrete(name="Data Type") +
+  labs(y="Rresponse time") +
+  guides(color=F) + 
+  ggtitle("Simon Effect (RT)", subtitle = "Emperical vs. Model") +
+  theme_pander(base_size = 20) 
+
+plot.se1
+plot.se2
+```
+
+```{r}
+plot.se3 <- ggplot(df_model.val,
+       aes(x = condition_cue, y = accuracy.mean, group = 1)) +
+  geom_line(aes(x=condition_cue, y=accuracy.mean, group=1, linetype="Model"), size=2) +
+  geom_pointrange(aes(x=condition_cue, y=accuracy.mean, ymax=accuracy.upper.ci, ymin=accuracy.lower.ci)) +
+  geom_point(aes(col = condition_cue, group=1),alpha = .5, size=8) +
+  geom_line(data=dfb.val, aes(x=condition_cue, y=accuracy, group=1, linetype="Emperical"), size=2) +
+  geom_point(data=dfb.val, aes(x=condition_cue, y=accuracy, color=condition_cue),size=8) +
+  scale_linetype_discrete(name="Data Type") +
+  guides(color=F) + 
+  labs(y="Accuracy") +
+  #ylim(0.8,1) +
+  #scale_color_brewer(palette = "Set2") +
+  ggtitle("Simon Effect (Accuacy)", subtitle = "Emperical vs. Model") +
+  theme_pander(base_size = 20) 
+
+plot.se4 <- ggplot(df_model.val,
+       aes(x = condition_cue, y = response_time.mean/SCALE_FACTOR, group = 1)) +
+  geom_line(aes(x=condition_cue, y=response_time.mean/SCALE_FACTOR, group=1, linetype="Model"), size=2) +
+  geom_pointrange(aes(x=condition_cue, y=response_time.mean, ymax=response_time.upper.ci, ymin=response_time.lower.ci)) +
+  geom_point(aes(col = condition_cue, group=1),alpha = .5, size=8) +
+  geom_line(data=dfb.val, aes(x=condition_cue, y=response_time/1000, group=1, linetype="Emperical"), size=2) +
+  geom_point(data=dfb.val, aes(x=condition_cue, y=response_time/1000, color=condition_cue),size=8) +
+  scale_linetype_discrete(name="Data Type") +
+  labs(y="Rresponse time") +
+  #guides(color=F) + 
+  ggtitle("Simon Effect (RT)", subtitle = "Emperical vs. Model") +
+  theme_pander(base_size = 20) 
+
+plot.se3
+plot.se4
+```
+
+
+```{r fig.dim=c(12,8)}
+ggarrange(plot.se1, plot.se2, plot.se3, plot.se4, ncol = 2, nrow = 2, common.legend = T)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/simon_effect.png', 
+         device = 'png', bg = 'transparent', width = 12, height = 8)
+}
+```
+
+
+### Post Error Slow
+
+Interestingly, the model could replicate post-error-slowing effect (?)
+
+Empirical data showed the effect fatigue on both accuracy and response time. Intervel 1-6 are 6 successive intervals, while Interval 7 is the reward interval during which participants receive extra rewards (money) if they performed well. 
+
+**TODO** : wait for more simulation data
+
+First let's look at aggregated post error slowing across 6 non-reward intervals, (interval 7 is the reward session)
+
+```{r}
+# convert to long format
+dfb.posterror.long <- dfb.posterror %>%
+  pivot_longer(c("response_time", "post_correct", "post_error"), names_to = "group", values_to = "response_time") %>%
+  filter((group=="post_correct") | (group=="post_error"))
+
+```
+
+
+
+```{r}
+df.posterror.model <- df.posterror.emperical <- dfb.posterror.long %>%
+  #ggplot(aes(x=interval, y=response_time, group=group, color=group)) +
+  ggplot(aes(x=group, y=response_time/1000, group=1, color=group)) +
+  #geom_point(size=8, alpha=.8) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size=2, alpha=.5, aes(col=group)) +
+  stat_summary(fun.data = "mean_se", col="black", geom = "line", size=2, alpha=.5) +
+  scale_color_manual(values = c("#377EB8", "#E41A1C")) +
+  labs(x="", y="Response Time", title = "Emperical Data", subtitle = "Post-error rsponse time ")  +
+  theme_pander(base_size = 20)
+
+df.posterror.emperical
+```
+
+
+Across all parameter space, we could observe a post-error slowing. 
+
+
+```{r}
+df_model.subset1 <- df_model.joined %>%
+  filter(session ==1 & valid_cue_percentage==0.5) %>%
+  select(index, pre_trial_accuracy, motivation, init_cost, response_time, accuracy) %>%
+  filter(pre_trial_accuracy!="NaN") %>%
+  group_by(pre_trial_accuracy, motivation, init_cost) %>%
+  summarise(response_time = mean(response_time), accuracy=mean(accuracy))
+
+df_model.subset1
+```
+
+```{r}
+df_model.subset1 %>% 
+  mutate(group = factor(pre_trial_accuracy)) %>%
+  ggplot(aes(x = group, y = response_time, group=1, color=group)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size=2, alpha=.5, aes(col=group)) +
+  stat_summary(fun.data = "mean_se", col="black", geom = "line", size=2, alpha=.5) +
+  scale_color_manual(values = c("#377EB8", "#E41A1C")) +
+  labs(x="", y="Response Time", title = "Model Data", subtitle = "Post-error rsponse time")  +
+  theme_pander(base_size = 20)
+
+```
+
+
+This plot is based on all possible parameter space: HAS PES
+
+```{r}
+df_model.joined %>% 
+  filter(pre_trial_accuracy!="NaN") %>%
+  mutate(group = factor(pre_trial_accuracy)) %>%
+  ggplot(aes(x = group, y = response_time, group=1, color=group)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size=2, alpha=.8, aes(col=group)) +
+  stat_summary(fun.data = "mean_se", col="black", geom = "line", size=2, alpha=.5) +
+  scale_color_manual(values = c("#377EB8", "#E41A1C")) +
+  labs(x="", y="Response Time", title = "Model Data", subtitle = "Post-error rsponse time")  +
+  theme_pander(base_size = 20)
+
+
+```
+
+```{r, eval=FALSE, fig.dim=c(6,4)}
+ggarrange(df.posterror.emperical, df.posterror.model, common.legend = T)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/post_error.png', device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+```
+
+```{r}
+dfb.posterror.agg <- dfb.posterror.long %>%
+  group_by(group) %>%
+  summarise(n=n(), response_time.mean = mean(response_time/1000), response_time.sd=sd(response_time/1000)) %>%
+  mutate(response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se)
+
+```
+
+```{r eval=FALSE}
+df_model.joined %>% 
+  filter(pre_trial_accuracy!="NaN") %>%
+  mutate(group = recode_factor(pre_trial_accuracy, "post-correct" = "post_correct", "post-error" = "post_error")) %>% 
+  ggplot(aes(x = group, y = response_time, group=1, color=group)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size=2, alpha=.8, aes(col=group)) +
+  stat_summary(fun.data = "mean_se", col="black", geom = "line", size=2, alpha=.5, aes(linetype="model")) +
+  geom_pointrange(data=dfb.posterror.agg, size=2,
+                  aes(x=group, y=response_time.mean, ymin=response_time.lower.ci, ymax=response_time.upper.ci)) +
+  geom_line(data=dfb.posterror.agg, color="black", alpha=0.8, size=2, 
+            aes(x=group, y=response_time.mean, linetype="emperical")) +
+  scale_color_manual(values = c("#377EB8", "#E41A1C")) +
+  #scale_y_continuous(sec.axis = sec.axis(~.*2))
+  scale_linetype_discrete(name="Data Type") +
+  labs(x="", y="Response Time", title = "Emperical Data", subtitle = "Post-error rsponse time ")  +
+  theme_pander(base_size = 20)
+```
+
+
+### Probability of CHECK
+
+Density plot of control allocation
+
+Higher motivation, the P(Control Intensity = High) increases
+
+```{r}
+df_model %>% 
+  mutate(motivation = cut(motivation, breaks=c(0, 2.5, 5, 7.5, 10))) %>%
+  ggdensity(x="check_count", #facet.by = "motivation.bin", 
+            color ="motivation", size=1, #facet.by = "motivation.bin",
+            palette = "Purples", alpha=.1) +
+  labs(x="Control Intensity (Counts)", y="Probability of CHECK") +
+  lims(y=c(0,1)) +
+  ggtitle("Probability of CHECK (Counts)", subtitle = "Motivation 0-10") +
+  theme_pander(base_size = 20) 
+
+```
+
+
+Looking at continuous Control Intensity, P(Control Intensity = HIGH) increases as motivation increases
+
+```{r}
+df_model %>% 
+  filter(check_time>0) %>%
+  mutate(motivation = cut(motivation, breaks=c(0, 2.5, 5, 7.5, 10))) %>%
+  ggdensity(x="check_time", #facet.by = "motivation.bin", 
+            color ="motivation", size=1, #facet.by = "motivation.bin",
+            palette = "Purples", alpha=.1) +
+  labs(x="Control Intensity (Time)", y="Probability of CHECK") +
+  lims(y=c(0,1), x=c(0.8, 2)) +
+  ggtitle("Probability of CHECK (Time)", subtitle = "Motivation 0-10") +
+  theme_pander(base_size = 20) 
+
+```
+
+Probability plot of control signal intensity
+
+```{r, fig.dim=c(8,4)}
+df_model %>%
+  mutate(m = factor(cut(motivation, breaks=c(0, 2.5, 5, 7.5, 10))),
+         check_count = factor(check_count)) %>% 
+  group_by(check_count, m, .drop = F) %>%
+  summarise(n = n()) %>%
+  mutate(probability = n / sum(n)) %>%
+  ggplot(aes(x=check_count, y=probability, group=1)) +
+  geom_point(aes(color = m), size=5, alpha=0.8) +
+  geom_line(aes(color = m, group=m), size=2, alpha=0.8) +
+  #scale_color_manual(values = brewer.pal(9, "Purples")[3:7] )+
+  scale_color_brewer(palette = "Purples") +
+  labs(x="Control Intensity (Number of Checking)", y="Probability of CHECK", 
+       title = "Probability of Control Signal Intenisty", 
+       subtitle = "M Parameter: 0 - 10") +
+  theme_pander(base_size = 20)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/probability_check.png', 
+         device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+```
+
+
+### EVC in ACT-R
+
+Next, Let's look at the EVC in ACTR. Since we only care the effect of 
+
+  - motivation
+  - init_cost
+
+We could fix other parameters, such as
+
+  - : session = 1 -7
+  - : update_cost = F 
+  - : init_cost = 0.05
+  - : cost = 0.05
+  - : valid_cue_percentage = 0.5
+
+```{r}
+df_model.subset2 <- df_model.joined %>%
+  filter(session==1 & update_cost==F)
+```
+
+
+Sanity check
+
+```{r}
+df_model.subset2 %>%
+  ggplot(aes(x=check_count, check_time)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange") + 
+  stat_summary(fun.data = "mean_se", geom = "line") 
+
+df_model.subset2 %>%
+  ggplot(aes(x=check_count, response_time)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange") + 
+  stat_summary(fun.data = "mean_se", geom = "line") 
+
+df_model.subset2 %>%
+  ggplot(aes(x=check_count, delivered_reward)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange") + 
+  stat_summary(fun.data = "mean_se", geom = "line")
+
+df_model.subset2 %>%
+  mutate(u.diff=u_check-u_dont_check) %>%
+  ggplot(aes(x=check_count, u_check)) +
+  stat_summary(fun.data = "mean_se", geom = "point") + 
+  stat_summary(fun.data = "mean_se", geom = "line")
+
+```
+
+
+```{r}
+df_model.subset2 %>%
+  mutate(check_time = cut(check_time, breaks=10)) %>%
+  ggplot(aes(x=check_time, y=response_time, group=1)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange") +
+  stat_summary(fun.data = "mean_se", geom = "line") +
+  theme_pander()
+
+df_model.subset2 %>%
+  mutate(check_time = cut(check_time, breaks=10)) %>%
+  ggplot(aes(x=check_time, y=delivered_reward, group=1)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange") +
+  stat_summary(fun.data = "mean_se", geom = "line") +
+  theme_pander()
+```
+
+```{r}
+df_model.subset2 %>%
+  mutate(check_time = cut(check_time, breaks=8), 
+         valid_cue_percentage.bin = cut(valid_cue_percentage, breaks=2), 
+         u.diff=u_check-u_dont_check) %>%
+  ggplot() +
+  stat_summary(aes(x=check_time, y=u.diff, group=valid_cue_percentage.bin, color="Utility"),  fun.data = "mean_se", geom = "pointrange") + 
+  stat_summary(aes(x=check_time, y=motivation, group=valid_cue_percentage.bin, color="Reward"),fun.data = "mean_se", geom = "pointrange") +
+  stat_summary(aes(x=check_time, y=response_time, group=valid_cue_percentage.bin, color="Cost"),fun.data = "mean_se", geom = "pointrange") +
+  
+  stat_summary(aes(x=check_time, y=u.diff, group=valid_cue_percentage.bin, linetype=valid_cue_percentage.bin, color="Utility"), 
+               fun.data = "mean_se", geom = "line") + 
+  stat_summary(aes(x=check_time, y=motivation, group=valid_cue_percentage.bin, linetype=valid_cue_percentage.bin, color="Reward"), 
+               fun.data = "mean_se", geom = "line") + 
+  stat_summary(aes(x=check_time, y=response_time, group=valid_cue_percentage.bin, linetype=valid_cue_percentage.bin, color="Cost"), 
+               fun.data = "mean_se", geom = "line") + 
+  scale_x_discrete(labels = round(seq(0,max(df_model.subset2$check_time), length.out = 8), digits = 2)) + 
+  scale_color_manual(values = c("tomato2", "darkgreen","mediumpurple")) +
+  scale_linetype_manual("Difficulty", values= c("solid", "dotted"), labels = c("High", "Low")) +
+  #facet_grid(.~valid_cue_percentage) + 
+  labs(x="Control Intensity", y="Utility", title = "Expected Value of Control in ACT-R") +
+  theme_pander(base_size = 20)
+
+```
+
+```{r}
+mot_split = function(lower, upper, df) {
+  df = df %>% filter(valid_cue_percentage == 0.5 & motivation > lower & motivation <=upper) %>%
+  mutate(check_time.bin = cut(check_time, breaks=8), 
+         motivation.bin = cut(motivation, breaks=4), 
+         u.diff=u_check-u_dont_check,
+         motivation_upper = factor(upper))
+  return (df)
+}
+df_model.subset2.mot = rbind(mot_split(0, 5, df_model.subset2),
+                              mot_split(0, 10, df_model.subset2))
+
+ggplot(data=df_model.subset2.mot) +
+  stat_summary(aes(x=check_time.bin, y=u.diff, group=motivation_upper, color="Utility"),  fun.data = "mean_se", geom = "pointrange") + 
+  stat_summary(aes(x=check_time.bin, y=motivation, group=motivation_upper, color="Reward"),fun.data = "mean_se", geom = "pointrange") +
+  stat_summary(aes(x=check_time.bin, y=response_time, group=motivation_upper, color="Cost"),fun.data = "mean_se", geom = "pointrange") +
+  
+  stat_summary(aes(x=check_time.bin, y=u.diff, group=motivation_upper, linetype=motivation_upper, color="Utility"), fun.data = "mean_se", geom = "line") + 
+  stat_summary(aes(x=check_time.bin, y=motivation, group=motivation_upper, linetype=motivation_upper,color="Reward"), fun.data = "mean_se", geom = "line") + 
+  stat_summary(aes(x=check_time.bin, y=response_time, group=motivation_upper, linetype=motivation_upper, color="Cost"), fun.data = "mean_se", geom = "line") + 
+  scale_x_discrete(labels = round(seq(0,max(df_model.subset2$check_time), length.out = 8), digits = 2)) + 
+  scale_color_manual(values = c("tomato2", "darkgreen","mediumpurple")) +
+  scale_linetype_manual("Payoffs", values= c("dotted", "solid"), labels = c("Low", "High")) +
+  #facet_grid(.~motivation_upper) + 
+  labs(x="Control Intensity", y="Utility", title = "Expected Value of Control in ACT-R") +
+  theme_pander(base_size = 20)
+```
+
+```{r}
+df_model.joined %>%
+  group_by(check_count) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggboxplot(x="check_count", y="accuracy") 
+
+df_model.subset2 %>%
+  ggline(x="check_count", y="cost")
+```
+
+
+```{r}
+SCALE_FACTOR = 1
+df_model.subset2_reduced <- df_model.subset2 %>% 
+  #mutate(u_check = `:u_CHECK-PASS`, 
+  #       u_dont_check = `:u_DONT-CHECK`,
+  #       u.mean = (`:u_CHECK-PASS` + `:u_DONT-CHECK`)/2,
+  #       u.diff = (`:u_CHECK-PASS` - `:u_DONT-CHECK`)) %>%
+  group_by(check_count) %>% 
+  mutate(
+    u.mean = (u_check - u_dont_check)/2,
+    u.diff = (u_check - u_dont_check)) %>%
+  group_by(check_count) %>% 
+  summarise(n = n(), 
+            motivation.mean=mean(motivation, na.rm = TRUE),  
+            motivation.sd = sd(motivation, na.rm = TRUE),
+            reward.mean=mean(received_reward, na.rm = TRUE),  
+            reward.sd = sd(received_reward, na.rm = TRUE),
+            response_time.mean=mean(response_time*SCALE_FACTOR, na.rm = TRUE), 
+            response_time.sd = sd(response_time*SCALE_FACTOR, na.rm = TRUE), 
+            init_cost.mean=mean(init_cost*SCALE_FACTOR, na.rm = TRUE), 
+            init_cost.sd = sd(init_cost*SCALE_FACTOR, na.rm = TRUE), 
+            u_check.mean = mean(u_check, na.rm = TRUE), 
+            u_check.sd = sd(u_check, na.rm = TRUE),
+            u_dontcheck.mean = mean(u_dont_check, na.rm = TRUE), 
+            u_dontcheck.sd = sd(u_dont_check, na.rm = TRUE), 
+            u.mean = mean(u.mean, na.rm = TRUE), 
+            u.sd = sd(u.mean, na.rm = TRUE), 
+            u.diff.mean = mean(u.diff, na.rm = TRUE), 
+            u.diff.sd = sd(u.diff, na.rm = TRUE), 
+            ) %>%
+  mutate(motivation.se = motivation.sd / sqrt(n),
+         motivation.lower.ci = motivation.mean - qt(1 - (0.05 / 2), n - 1) * motivation.se,
+         motivation.upper.ci = motivation.mean + qt(1 - (0.05 / 2), n - 1) * motivation.se, 
+         reward.se = reward.sd / sqrt(n),
+         reward.lower.ci = reward.mean - qt(1 - (0.05 / 2), n - 1) * reward.se,
+         reward.upper.ci = reward.mean + qt(1 - (0.05 / 2), n - 1) * reward.se, 
+         response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         init_cost.se = response_time.sd / sqrt(n),
+         init_cost.lower.ci = init_cost.mean - qt(1 - (0.05 / 2), n - 1) * init_cost.se,
+         init_cost.upper.ci = init_cost.mean + qt(1 - (0.05 / 2), n - 1) * init_cost.se,
+         u_check.se = u_check.sd / sqrt(n),
+         u_check.lower.ci = u_check.mean + qt(1 - (0.05 / 2), n - 1) * u_check.se,
+         u_check.upper.ci = u_check.mean - qt(1 - (0.05 / 2), n - 1) * u_check.se, 
+         u_dontcheck.se = u_dontcheck.sd / sqrt(n),
+         u_dontcheck.lower.ci = u_dontcheck.mean + qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se,
+         u_dontcheck.upper.ci = u_dontcheck.mean - qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se, 
+         u.se = u.sd / sqrt(n),
+         u.lower.ci = u.mean + qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.upper.ci = u.mean - qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.diff.se = u.diff.sd / sqrt(n),
+         u.diff.lower.ci = u.diff.mean + qt(1 - (0.05 / 2), n - 1) * u.diff.se,
+         u.diff.upper.ci = u.diff.mean - qt(1 - (0.05 / 2), n - 1) * u.diff.se)
+
+```
+
+As expected, the utility of CHECK is always above the utility of DONT-CHECK, because our model encourages checking
+
+```{r warning=FALSE}
+ggplot(df_model.subset2_reduced, aes(x=check_count)) +
+  geom_point(aes(x=check_count, y=u_check.mean, color="check"), 
+             position = position_jitter(), size=2, alpha=.7) +
+  geom_smooth(aes(x=check_count, y=u_check.mean, color="check"), size=2, span = 0.8, method = "loess", formula = "y~x") +
+  geom_point(aes(x=check_count, y=u_dontcheck.mean, color="dont-check"), 
+             position = position_jitter(), size=2, alpha=.7) +
+  geom_smooth(aes(x=check_count, y=u_dontcheck.mean, color="dont-check"), size=2, span = 0.8, method = "loess", formula = "y ~ x")+
+  labs(x="Control Intensity (Number of Check)", y="Utility", title = "Utility of CHECK vs. DONT-CHECK") +
+  scale_colour_manual("Legend",  breaks = c("check", "dont-check"),
+                      values = c("check"="tomato", "dont-check"="steelblue")) +
+  theme_pander(base_size = 20)
+```
+
+
+Our model's prediction is inline with EVC Model: The concave curve of Utility curve
+
+
+```{r fig.dim=c(8,4), warning=FALSE}
+ggplot(df_model.subset2_reduced, aes(x=check_count)) +
+  #geom_point(aes(x=check_count, y=reward.mean, color="reward"), 
+  #           position = position_jitter(), size=2, alpha=.7) +
+  geom_pointrange(aes(x=check_count, y=reward.mean, ymin=reward.lower.ci, ymax=reward.upper.ci, color="reward"), 
+                  alpha=.5, width=2, size=2) +
+  geom_smooth(aes(x=check_count, y=reward.mean, color="reward"), size=2, span = 0.8, method = "loess", formula = "y ~ x") +
+  
+  #geom_point(aes(x=check_count, y=response_time.mean, color="cost"), 
+  #           position = position_jitter(), size=2, alpha=.7) +
+  geom_pointrange(aes(x=check_count, y=init_cost.mean, ymin=init_cost.lower.ci, ymax=init_cost.upper.ci,
+                      color="cost"),  alpha=.5, width=2, size=2) +
+  geom_smooth(aes(x=check_count, y=init_cost.mean, color="cost"), size=2, span = 0.8, method = "loess", formula = "y ~ x")  +
+  
+  #geom_point(aes(x=check_count, y=u.diff.mean, color="utility"), 
+  #           position = position_jitter(), size=2, alpha=.7) +
+  geom_pointrange(aes(x=check_count, y=u.diff.mean, ymin=u.diff.lower.ci, ymax=u.diff.upper.ci, color="utility"), 
+                  alpha=.5, width=2, size=2) +
+  geom_smooth(aes(x=check_count, y=u.diff.mean, color="utility"), size=2, span = 0.8, method = "loess", formula = "y ~ x") +
+  labs(x="Control Intensity", y="Utility", title = "Expected Value of Control in ACT-R") +
+  scale_colour_manual("Legend",  breaks = c("reward", "cost", "utility"),
+                      values = c("reward"="olivedrab", "cost"="tomato",  "utility"="mediumpurple")) +
+  theme_pander(base_size = 20)
+
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/evc_curve.png', device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+
+```
+
+```{r fig.dim=c(8,4)}
+ggplot() +
+  geom_point(data=df_model.subset2_reduced, aes(x=check_count, y=u.diff.mean, color="utility"), size=2, alpha=.7) +
+  geom_point(data=df_model.subset2_reduced, mapping = aes(x=check_count, y=reward.mean, color="reward"), size=2, alpha=.7) +
+  geom_point(data=df_model.subset2_reduced, mapping = aes(x=check_count, y=response_time.mean, color="cost"),size=2, alpha=.7) +
+  
+  geom_pointrange(data=df_model.subset2_reduced, 
+                  aes(x=check_count, y=reward.mean, ymin=reward.lower.ci, ymax=reward.upper.ci, color="reward"), 
+                  alpha=.5, width=2, size=2) +
+  geom_pointrange(data=df_model.subset2_reduced, 
+                  aes(x=check_count, y=response_time.mean, ymin=response_time.lower.ci, ymax=response_time.upper.ci,
+                      color="cost"),  alpha=.5, width=2, size=2) +
+  geom_pointrange(data=df_model.subset2_reduced, 
+                  aes(x=check_count, y=u.diff.mean, ymin=u.diff.lower.ci, ymax=u.diff.upper.ci, color="utility"), 
+                  alpha=.5, width=2, size=2) +
+  geom_line(data=df_model.subset2_reduced, 
+            aes(x=check_count, y=reward.mean, color="reward"), size=2, span = 0.8) +
+  geom_line(data=df_model.subset2_reduced, 
+            aes(x=check_count, y=response_time.mean, color="cost"), size=2)  +
+  geom_line(data=df_model.subset2_reduced, 
+            aes(x=check_count, y=u.diff.mean, color="utility"), size=2) +
+  labs(x="Control Intensity", y="Utility", title = "Expected Value of Control in ACT-R") +
+  scale_colour_manual("Legend",  breaks = c("reward", "cost", "utility"),
+                      values = c("reward"="olivedrab", "cost"="tomato",  "utility"="mediumpurple")) +
+  scale_y_continuous(name = expression("Utility"),
+                     sec.axis = sec_axis(~ . , name = "Reward")) +
+  theme_pander(base_size = 20)
+
+if (SAVE.PLOT) {
+  ggsave(filename = './figures/evc.png', 
+         device = 'png', bg = 'transparent', width = 8, height = 4)
+}
+```
+
+#### Reward vs. Control Intensity
+
+```{r}
+ggplot(data = df_model.subset2, aes(x=check_count, y=delivered_reward)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "olivedrab", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "olivedrab4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Reward", title="Reward as a function of Control Intensity") +
+  theme_pander() 
+```
+
+#### Cost vs. Control Intensity
+
+```{r}
+ggplot(data = df_model.subset2, aes(x=check_count, y=response_time)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "tomato", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "tomato4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Cost (Time)", title="Cost as a function of Control Intensity") +
+  theme_pander() 
+```
+
+#### Utility vs. Control Intensity
+
+The mean of utility between CHECK and DONT-CHECK
+
+```{r eval=FALSE}
+df_model.subset2 %>%  mutate(u.mean = (u_check + u_dont_check)/2) %>%
+  ggplot(aes(x=check_count, y=u.mean)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "mediumpurple2", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "mediumpurple4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Utility (Mean)", title="Utility as a function of Control Intensity") +
+  theme_pander() 
+
+df_model.subset2 %>%  mutate(u.diff = (u_check - u_dont_check)) %>%
+  ggplot(aes(x=check_count, y=u.diff)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "mediumpurple2", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "mediumpurple4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Utility (Diff)", title="Utility as a function of Control Intensity") +
+  theme_pander() 
+```
+
+The utility of CHECK and The utility of DONT-CHECK separately
+
+```{r eval=FALSE}
+df_model.subset2 %>%  
+  ggplot(aes(x=check_count, y=u_check)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "mediumpurple", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "mediumpurple4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Utility (CHECK)", title="Utility as a function of Control Intensity") +
+  theme_pander() 
+
+df_model.subset2 %>%  
+  ggplot(aes(x=check_count, y= u_dont_check)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "line", colour = "mediumpurple4", size = 2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "mediumpurple4", size = 3,  alpha = 0.7) +
+  labs(x="Control Intensity (Number of Check)", y="Utility (NO-CHECK)", title="Utility as a function of Control Intensity") +
+  theme_pander() 
+```
+
+
+
+```{r eval=FALSE}
+df_model.subset2_reduced %>%
+  mutate(check_count=factor(check_count)) %>%
+  ggplot(aes(x=check_count, group=1)) +
+
+  geom_pointrange(aes(x=check_count, y=response_time.mean,  color="Cost",
+                      ymin=response_time.lower.ci, ymax=response_time.upper.ci), size=2, alpha=.2) +
+  geom_line(aes(x=check_count, y=response_time.mean, color="Cost"),size=2) +
+  
+  
+  geom_pointrange(aes(x=check_count, y=motivation.mean,  color="Reward",
+                      ymin=motivation.lower.ci, ymax=motivation.upper.ci), size=2, alpha=.2) +
+  geom_line(aes(x=check_count, y=motivation.mean, color="Reward"),size=2) +
+  
+  geom_pointrange(aes(x=check_count, y=u.diff.mean, color="EVC", 
+                      ymin=u.diff.lower.ci, ymax=u.diff.upper.ci), size=2, alpha=.2) +
+  geom_line(aes(x=check_count, y=u.diff.mean, color="EVC"), size=2) +
+  
+  ggtitle("The Expected Value of Control in ACT-R") +
+  labs(x="Control Intensity (Number of Checking)") +
+  scale_y_continuous(name = "Resposne Time (Cost)", sec.axis=sec_axis(~./1, name="Utility (EVC)")) +
+  scale_color_manual(name="Color", values = c("tomato2", "mediumpurple", "forestgreen"), 
+                     labels = c("Response Time", "Utility", "M Parameter")) + 
+  theme_pander(base_size = 20) 
+
+
+```
+ 
+#### EVC and Difficulty
+Next, Let's look at the EVC in ACTR. Since we only care the effect of 
+
+  
+  - init_cost
+  - valid_cue_percentage 
+
+We could fix other parameters, such as
+  - motivation < 4
+  - session = ALL
+  - update_cost = T
+
+```{r}
+df_model.subset3 <- df_model.joined %>%
+  filter(motivation < 4 & update_cost==T) %>%
+   mutate(check_count=factor(check_count),
+         difficulty=factor(valid_cue_percentage),
+    u.mean = (u_check - u_dont_check)/2,
+    u.diff = (u_check - u_dont_check))
+```
+
+
+```{r}
+df_model.subset3_reduced <- df_model.subset3 %>% 
+  #mutate(u_check = `:u_CHECK-PASS`, 
+  #       u_dont_check = `:u_DONT-CHECK`,
+  #       u.mean = (`:u_CHECK-PASS` + `:u_DONT-CHECK`)/2,
+  #       u.diff = (`:u_CHECK-PASS` - `:u_DONT-CHECK`)) %>%
+  #group_by(check_count) %>% 
+  group_by(valid_cue_percentage, check_count, .drop = FALSE) %>% 
+  summarise(n = n(), 
+            motivation.mean=mean(motivation, na.rm = TRUE),  
+            motivation.sd = sd(motivation, na.rm = TRUE),
+            reward.mean=mean(received_reward, na.rm = TRUE),  
+            reward.sd = sd(received_reward, na.rm = TRUE),
+            response_time.mean=mean(response_time, na.rm = TRUE), 
+            response_time.sd = sd(response_time, na.rm = TRUE), 
+            u_check.mean = mean(u_check, na.rm = TRUE), 
+            u_check.sd = sd(u_check, na.rm = TRUE),
+            u_dontcheck.mean = mean(u_dont_check, na.rm = TRUE), 
+            u_dontcheck.sd = sd(u_dont_check, na.rm = TRUE), 
+            u.mean = mean(u.mean, na.rm = TRUE), 
+            u.sd = sd(u.mean, na.rm = TRUE), 
+            u.diff.mean = mean(u.diff, na.rm = TRUE), 
+            u.diff.sd = sd(u.diff, na.rm = TRUE), 
+            ) %>%
+  mutate(motivation.se = motivation.sd / sqrt(n),
+         motivation.lower.ci = motivation.mean - qt(1 - (0.05 / 2), n - 1) * motivation.se,
+         motivation.upper.ci = motivation.mean + qt(1 - (0.05 / 2), n - 1) * motivation.se, 
+         reward.se = reward.sd / sqrt(n),
+         reward.lower.ci = reward.mean - qt(1 - (0.05 / 2), n - 1) * reward.se,
+         reward.upper.ci = reward.mean + qt(1 - (0.05 / 2), n - 1) * reward.se, 
+         response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         u_check.se = u_check.sd / sqrt(n),
+         u_check.lower.ci = u_check.mean + qt(1 - (0.05 / 2), n - 1) * u_check.se,
+         u_check.upper.ci = u_check.mean - qt(1 - (0.05 / 2), n - 1) * u_check.se, 
+         u_dontcheck.se = u_dontcheck.sd / sqrt(n),
+         u_dontcheck.lower.ci = u_dontcheck.mean + qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se,
+         u_dontcheck.upper.ci = u_dontcheck.mean - qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se, 
+         u.se = u.sd / sqrt(n),
+         u.lower.ci = u.mean + qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.upper.ci = u.mean - qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.diff.se = u.diff.sd / sqrt(n),
+         u.diff.lower.ci = u.diff.mean + qt(1 - (0.05 / 2), n - 1) * u.diff.se,
+         u.diff.upper.ci = u.diff.mean - qt(1 - (0.05 / 2), n - 1) * u.diff.se)
+  #mutate_all(~replace(., is.nan(.), 0)) 
+  
+```
+
+```{r}
+check_counts <- max(as.numeric(df_model.subset3_reduced$check_count))
+
+df_model.subset3_reduced %>%
+  mutate(check_count=factor(check_count),
+         difficulty=factor(valid_cue_percentage)) %>%
+  ggplot(aes(x=check_count, group=difficulty)) +
+  
+  geom_pointrange(mapping = aes(x=check_count, y=response_time.mean,  #shape="Cost",
+                      ymin=response_time.lower.ci, ymax=response_time.upper.ci), size=1, alpha=.5, color="tomato2") +
+  geom_line(mapping = aes(x=check_count, y=response_time.mean), color=rep(brewer.pal(5, name = "Reds"), each=check_counts), size=1) +
+  
+  
+  geom_pointrange(mapping = aes(x=check_count, y=motivation.mean,  #shape="Payoff",
+                      ymin=motivation.lower.ci, ymax=motivation.upper.ci), size=1, alpha=.5, color="forestgreen") +
+  geom_line(mapping = aes(x=check_count, y=motivation.mean), color=rep(brewer.pal(5, name = "Greens"), each=check_counts), size=1) +
+  
+  geom_pointrange(mapping = aes(x=check_count, y=u.diff.mean, #shape="EVC", 
+                      ymin=u.diff.lower.ci, ymax=u.diff.upper.ci), size=1, alpha=.5, color="mediumpurple2") +
+  geom_line(mapping = aes(x=check_count, y=u.diff.mean, color=difficulty, size=difficulty), size=1) +
+  
+  ggtitle("EVC as Difficulty Increases", subtitle = "ACT-R") +
+  labs(x="Control Intensity") +
+  scale_y_continuous(name = "Cost", sec.axis=sec_axis(~./1, name="Utility")) +
+  scale_color_brewer(type="seq", palette = "Purples") + 
+  theme_pander(base_size = 20) 
+
+```
+
+```{r}
+df_model.subset3_long <- df_model.subset3 %>%
+  select(difficulty, check_count, response_time, motivation, u.diff) %>% unique() %>%
+  pivot_longer("difficulty", names_repair = "minimal",  names_to = "difficulty_name", values_to = "difficulty_level") %>%
+  pivot_longer(cols = c("response_time", "motivation", "u.diff"), names_to = "curve_type", values_to = "curve_value") 
+  
+df_model.subset3_long %>%
+  ggline(x="check_count", y="curve_value", linetype  = "curve_type", facet.by ="difficulty_level", add = "mean_se")
+```
+
+#### EVC and Payoffs
+Next, Let's look at the EVC in ACTR. Since we only care the effect of 
+
+  - motivation
+  - init_cost
+  
+
+We could fix other parameters, such as
+  - valid_cue_percentage = 1
+  - : session = ALL
+  - : update_cost = FALSE
+
+```{r}
+df_model.subset4 <- df_model.joined %>%
+  filter(valid_cue_percentage == 1 & update_cost==T) %>%
+   mutate(check_count=factor(check_count),
+         payoff=cut(motivation, breaks=c(0,2,4,6,8,10)),
+    u.mean = (u_check - u_dont_check)/2,
+    u.diff = (u_check - u_dont_check))
+```
+
+```{r}
+df_model.subset4_reduced <- df_model.subset4 %>% 
+  #mutate(u_check = `:u_CHECK-PASS`, 
+  #       u_dont_check = `:u_DONT-CHECK`,
+  #       u.mean = (`:u_CHECK-PASS` + `:u_DONT-CHECK`)/2,
+  #       u.diff = (`:u_CHECK-PASS` - `:u_DONT-CHECK`)) %>%
+  #group_by(check_count) %>% 
+  group_by(payoff, check_count, .drop = FALSE) %>% 
+  summarise(n = n(), 
+            motivation.mean=mean(motivation, na.rm = TRUE),  
+            motivation.sd = sd(motivation, na.rm = TRUE),
+            reward.mean=mean(received_reward, na.rm = TRUE),  
+            reward.sd = sd(received_reward, na.rm = TRUE),
+            response_time.mean=mean(response_time, na.rm = TRUE), 
+            response_time.sd = sd(response_time, na.rm = TRUE), 
+            u_check.mean = mean(u_check, na.rm = TRUE), 
+            u_check.sd = sd(u_check, na.rm = TRUE),
+            u_dontcheck.mean = mean(u_dont_check, na.rm = TRUE), 
+            u_dontcheck.sd = sd(u_dont_check, na.rm = TRUE), 
+            u.mean = mean(u.mean, na.rm = TRUE), 
+            u.sd = sd(u.mean, na.rm = TRUE), 
+            u.diff.mean = mean(u.diff, na.rm = TRUE), 
+            u.diff.sd = sd(u.diff, na.rm = TRUE), 
+            ) %>%
+  mutate(motivation.se = motivation.sd / sqrt(n),
+         motivation.lower.ci = motivation.mean - qt(1 - (0.05 / 2), n - 1) * motivation.se,
+         motivation.upper.ci = motivation.mean + qt(1 - (0.05 / 2), n - 1) * motivation.se, 
+         reward.se = reward.sd / sqrt(n),
+         reward.lower.ci = reward.mean - qt(1 - (0.05 / 2), n - 1) * reward.se,
+         reward.upper.ci = reward.mean + qt(1 - (0.05 / 2), n - 1) * reward.se, 
+         response_time.se = response_time.sd / sqrt(n),
+         response_time.lower.ci = response_time.mean - qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         response_time.upper.ci = response_time.mean + qt(1 - (0.05 / 2), n - 1) * response_time.se,
+         u_check.se = u_check.sd / sqrt(n),
+         u_check.lower.ci = u_check.mean + qt(1 - (0.05 / 2), n - 1) * u_check.se,
+         u_check.upper.ci = u_check.mean - qt(1 - (0.05 / 2), n - 1) * u_check.se, 
+         u_dontcheck.se = u_dontcheck.sd / sqrt(n),
+         u_dontcheck.lower.ci = u_dontcheck.mean + qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se,
+         u_dontcheck.upper.ci = u_dontcheck.mean - qt(1 - (0.05 / 2), n - 1) * u_dontcheck.se, 
+         u.se = u.sd / sqrt(n),
+         u.lower.ci = u.mean + qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.upper.ci = u.mean - qt(1 - (0.05 / 2), n - 1) * u.se,
+         u.diff.se = u.diff.sd / sqrt(n),
+         u.diff.lower.ci = u.diff.mean + qt(1 - (0.05 / 2), n - 1) * u.diff.se,
+         u.diff.upper.ci = u.diff.mean - qt(1 - (0.05 / 2), n - 1) * u.diff.se) %>%
+  mutate_all(~replace(., is.nan(.), 0)) 
+  
+```
+
+```{r}
+df_model.subset4_reduced %>%
+  ggplot(aes(x=check_count, group=payoff)) +
+  
+  geom_pointrange(mapping = aes(x=check_count, y=response_time.mean,  #shape="Cost",
+                      ymin=response_time.lower.ci, ymax=response_time.upper.ci), size=1, alpha=.5, color="tomato2") +
+  geom_line(mapping = aes(x=check_count, y=response_time.mean),  
+            color=rep(brewer.pal(5, name = "Reds"), each=6), size=1) +
+  
+  
+  geom_pointrange(mapping = aes(x=check_count, y=motivation.mean,  #shape="Payoff",
+                      ymin=motivation.lower.ci, ymax=motivation.upper.ci), size=1, alpha=.5, color="forestgreen") +
+  geom_line(mapping = aes(x=check_count, y=motivation.mean),  
+            color=rep(brewer.pal(5, name = "Greens"), each=6), size=1) +
+  
+  geom_pointrange(mapping = aes(x=check_count, y=u.diff.mean, #shape="EVC", 
+                      ymin=u.diff.lower.ci, ymax=u.diff.upper.ci), size=1, alpha=.5, color="mediumpurple2") +
+  geom_line(mapping = aes(x=check_count, y=u.diff.mean, color=payoff, size=payoff), size=1) +
+  
+  ggtitle("EVC as Payoff Increases", subtitle = "ACT-R") +
+  labs(x="Control Intensity") +
+  scale_y_continuous(name = "Cost", sec.axis=sec_axis(~./1, name="Utility")) +
+  scale_color_brewer(type="seq", palette = "Purples") + 
+  theme_pander(base_size = 20) 
+
+
+```
+
+```{r}
+df_model.subset4_long <- df_model.subset4 %>%
+  select(payoff, check_count, response_time, received_reward, u.diff) %>% unique() %>%
+  pivot_longer("payoff", names_to = "payoff_name", values_to = "payoff_level") %>%
+  pivot_longer(cols = c("response_time", "received_reward", "u.diff"), names_to = "curve_type", values_to = "curve_value") 
+  
+df_model.subset4_long %>%
+  ggline(x="check_count", y="curve_value", linetype  = "curve_type", facet.by ="payoff_level", add = "mean_se")
+```
+
+## Checking time
+
+Instead of focusing on discrete control intensity, we could look at the 
+
+```{r}
+df_model.joined %>%
+  filter(check_time > 0) %>%
+  ggscatter(x="check_time", y="response_time", color = "motivation")
+
+df_model.joined %>%
+  filter(check_time > 0) %>%
+  mutate(u.diff = u_check - u_dont_check, motivation = factor(motivation)) %>%
+  ggline(x="check_time", y="u.diff")
+
+```
+
+```{r}
+
+df_model.joined %>%
+  filter(check_time > 0) %>%
+  ggplot(aes(x=check_time, y=response_time, group = factor(motivation))) +
+  stat_summary(fun.data = "mean_sd", geom = "point")
+
+
+df_model.joined %>%
+  filter(check_time > 0) %>%
+  mutate(u.diff = u_check - u_dont_check, motivation.bin = cut(motivation, breaks = c(0,5,10))) %>%
+  ggplot(aes(x=check_time, y=u.diff, group = factor(motivation.bin))) +
+  stat_summary(fun.data = "mean_sd", geom = "line")
+```
+
+
+### Fatigue Effect
+
+One interesting effect in Boksem's data is fatigue. They asked participants to do Simon task for 6 sessions (approximately 2 hours), and measured how did accuracy and response time change as time. They found in Interval 6, performance drops significantly. While if provided with extra rewards (in interval 7), participants show boosting performance. 
+
+
+```{r eval=FALSE}
+
+# THIS IS WRONG
+df_model.subset_fatigue <- df_model %>%
+  filter((motivation<5 & session<7) | (motivation>5 & session==7)) %>%
+  mutate(interval=factor(session)) 
+```
+
+```{r}
+load("../data/fatigue_simulation_20220424.RData")
+
+df_model.fatigue <- df_model.fatigue %>%
+  mutate(interval = factor(session))
+
+```
+
+```{r}
+df_model.fatigue %>% select(motivation) %>% unique()
+df_model.fatigue %>% select(cost) %>% unique()
+```
+
+
+```{r}
+plot.fatigue.m1 <- ggplot(df_model.fatigue, aes(x=interval, y=response_time, group=1)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size = 2, alpha=.8,
+               color=brewer.pal(n = 3, name = "Set1")[1]) +
+  stat_summary(fun.data = "mean_se", geom = "line", size = 2, alpha=.8, color="gray10") +
+  labs(x="Intervel", y="Response time", title="Model Data", subtitle = "Response Time") +
+  theme_pander(base_size = 20) 
+
+plot.fatigue.m2 <- ggplot(df_model.fatigue, aes(x=interval, y=accuracy, group=1)) +
+  stat_summary(fun.data = "mean_se", geom = "pointrange", size = 2, alpha=.8, color=brewer.pal(n = 3, name = "Set1")[1]) +
+  stat_summary(fun.data = "mean_se", geom = "line", size = 2, alpha=.8, color="gray10") +
+  labs(x="Intervel", y="Accuracy", title="Model Data", subtitle = "Accuracy") +
+  theme_pander(base_size = 20) 
+
+plot.fatigue.m1
+plot.fatigue.m2
+
+```
+
+```{r}
+plot.fatigue.e1 <- dfb.fatigue %>%
+  filter(group!="mean") %>%
+  ggplot(aes(x=factor(interval), y=response_time/1000, group=group)) +
+  geom_point(size=8, alpha=.8, aes(color=group)) +
+  geom_line(size=2, alpha=.8, aes(color=group)) + 
+  labs(x="Intervel", y="Response time", title="Emperical Data", subtitle = "Response Time") +
+  theme_pander(base_size = 20) +
+  scale_color_brewer(palette = "Set1")
+
+plot.fatigue.e2 <- dfb.fatigue %>%
+  filter(group!="mean") %>%
+  ggplot(aes(x=factor(interval), y=accuracy, group=group)) +
+  geom_point(size=8, alpha=.8,  aes(color=group)) +
+  geom_line(size=2, alpha=.8, aes(color=group)) +
+  labs(x="Intervel", y="Accuracy", title="Emperical Data", subtitle = "Accuracy") +
+  theme_pander(base_size = 20) +
+  scale_color_brewer(palette = "Set1")
+
+plot.fatigue.e1
+plot.fatigue.e2
+```
+
+```{r fig.dim=c(10,8)}
+ggarrange(plot.fatigue.e1, plot.fatigue.m1, plot.fatigue.e2, plot.fatigue.m2, common.legend = TRUE) 
+if (SAVE.PLOT) {
+  ggsave("./figures/fatigue_effect.png", width = 10, height = 6) 
+}
+```
+
+
+--- 
+
+### USELESS: DO vs. DONT-DO 
+
+Distribution of production selections - PROCESS-SHAPE and DONT-PROCESS-LOCATION are equally likely to be selected, and more likely to be selected than other two: PROCESS-LOCATION, DONT-PROCESS-SHAPE
+
+```{r}
+df_trace_reduced <- df_trace %>% drop_na() %>%
+  mutate(motivation.bin = factor(cut(motivation, breaks = c(0,2,4,6,8,10)), labels = c(2,4,6,8,10)))
+
+df_trace_reduced %>%
+  group_by(production) %>%
+  summarise(n = n()) %>%
+  mutate(freq = round(n / sum(n), 4)) %>%
+  ggbarplot(x = "production", y ="freq", color="white", alpah=.8,
+            fill = "production", position = position_dodge(0.9), palette = "Set3") +
+  rotate_x_text(30) + 
+  labs(x="production", y="frequency", title = "Firing Frequency of 4 Competitive Productions") +
+  theme_pander(base_size = 15,lp = "None")
+
+#df2_reduced %>%
+#  group_by(motivation) %>%
+#  count(production) %>%
+#  ggplot() +
+#  stat_summary_bin(aes(x=n, y=production, fill=production), 
+#                   fun.data = "mean_sd", geom = "bar", orientation = 'y', binwidth = 100, alpha=.8) +
+#  theme_pander(base_size = 15,lp = "None") +
+#  labs(x="Frequency", y="Production", title="Firing Frequency of 4 Competitive Productions") +
+#  scale_fill_brewer(palette = "Set2") 
+
+```
+
+```{r eval=FALSE}
+df_trace_reduced %>%
+  ggbarplot(x = "production", y ="u_check", fill = "production", add = "mean_ci", #position = position_dodge(0.9), 
+            palette = "Set3") +
+  rotate_x_text(30) + 
+  labs(x="production", y="Utility (Mean)", title = "Mean Utility of 4 Competitive Productions") +
+  theme_pander(base_size = 15,lp = "None")
+```
