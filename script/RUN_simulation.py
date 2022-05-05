@@ -1,9 +1,14 @@
 from simon_device import *
+import os
 import glob
+import matplotlib.pyplot as plt
 import itertools
 
 def check_parameters(param):
-	log = pd.read_csv("../data/log.csv", usecols=['motivation', 'init_cost', 'update_cost', 'valid_cue_percentage']).convert_dtypes()
+	logfile = "../data/log.csv"
+	if not os.path.exists(logfile):
+		return False
+	log = pd.read_csv(logfile, usecols=['motivation', 'init_cost', 'update_cost', 'valid_cue_percentage']).convert_dtypes()
 	logs = log.values
 	for l in logs:
 		if all(param == l):
