@@ -35,14 +35,14 @@ class MiniModel:
             actr.pdisable('retrieve-rule')
         self.setup_parameters()
     
-    def cost_function(self, x, a=1.5, enable=True):
-        c = np.exp(x*a)-1
+    def cost_function(self, x, a=50, enable=True):
+        c = np.exp(x*a)/a
         if enable:
             return np.round(c, 4)
         else:
             return x
 
-    def payoff_function(SELF, x, l=10, k=1, x0=5, enable=True):
+    def payoff_function(self, x, l=10, k=1, x0=5, enable=True):
         """
         sigmoid function
             x0 = mid point
@@ -68,7 +68,8 @@ class MiniModel:
             l = self.param_set['payoff']
 
         self.production_at = [self.cost_function(x) for x in self.production_at]
-        self.production_reward = [self.payoff_function(x, x0=x0, l=l) for x in self.production_reward]
+        #self.production_reward = [self.payoff_function(x, x0=x0, l=l) for x in self.production_reward]
+        self.production_reward = [self.payoff_function(x, x0=l/2, l=l) for x in self.production_reward]
         
         for i in range(len(self.ordered_productions)):
             actr.spp(self.ordered_productions[i], ":at", self.production_at[i], ":reward", self.production_reward[i])
