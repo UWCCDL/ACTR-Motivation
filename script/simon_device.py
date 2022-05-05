@@ -220,9 +220,11 @@ class SimonTrial:
     @property
     def check_time(self):
         """duration from CHECK-DETECT-PROBLEM-UNLIMITED to RESPOND"""
-        if self.check_onset==0.0:
+        t = self.check_offset - self.check_onset
+        if t < 0:
             return 0.0
-        return self.check_offset - self.check_onset
+        else:
+            return t
 
 '''
 def generate_stimuli(shuffle=True, n_trials=2, valid_cue_percentage=0.5):
